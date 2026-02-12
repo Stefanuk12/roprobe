@@ -14,4 +14,4 @@ A tool and extension for inspecting Roblox games.
 - [ ] Output redirection
 > View the output and errors from your script, directly within your IDE.
 - [ ] Multi-instance support
-> Select which instsnce to use, when many are active.
+> Select which instance to use, when many are active.
