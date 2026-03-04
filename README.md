@@ -15,3 +15,8 @@ A tool and extension for inspecting Roblox games.
 > View the output and errors from your script, directly within your IDE.
 - [ ] Multi-instance support
 > Select which instance to use, when many are active.
+
+## Credit and inspirations
+
+- [azul](https://github.com/Ransomwave/azul) - two-way sync across Studio and VSC
+- [verde](https://github.com/dvitash/verde) - live instance tree and editor
