@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-data:
+    name: Read Pesde TOML
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read package name
+        uses: SebRollen/toml-action@v1.2.0
+        id: read_name
+        with:
+          file: "pesde.toml"
+          field: "name"
+
+      - name: Process file name
+        id: process_file_name
+        run: |
+          PROCESSED_NAME=$(echo "${{ steps.read_name.outputs.value }}" | awk -F'/' '{if (NF>=2) print $2; else print $0}')
+          echo "value=$PROCESSED_NAME" >> $GITHUB_OUTPUT
+
+      - name: Read package version
+        uses: SebRollen/toml-action@v1.2.0
+        id: read_version
+        with:
+          file: "pesde.toml"
+          field: "version"
+
+    outputs:
+      name: ${{ steps.process_file_name.outputs.value }}
+      version: ${{ steps.read_version.outputs.value }}
+
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    needs: release-data
+    permissions:
+      contents: write
+
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create tag
+        run: |
+          git fetch --tags --no-recurse-submodules
+          if [ ! $(git tag -l ${{ needs.release-data.outputs.version }}) ]; then
+            git tag ${{ needs.release-data.outputs.version }}
+            git push origin ${{ needs.release-data.outputs.version }}
+          fi
+
+      - name: Create release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-data.outputs.version }}
+          name: ${{ needs.release-data.outputs.version }}
+          draft: false
+
+  bundle:
+    name: Bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs:
+      - release-data
+      - create-release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pesde
+        uses: lumin-org/setup-pesde@b690699ace34169731b6b2a1c93b2008472038a7 
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          pesde install
+
+      - name: Darklua
+        run: |
+          ~/.pesde/bin/darklua -V
+          darklua=$(find ~/.pesde/bin/.tool_storage -type f -name 'darklua*' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)
+          "$darklua" process src/init.luau dist.lua -c .meta/.darklua.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.release-data.outputs.name }}.luau
+          path: ./
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.release-data.outputs.version }}
+          files: |
+            ./dist.lua
+          name: ${{ needs.release-data.outputs.version }}
