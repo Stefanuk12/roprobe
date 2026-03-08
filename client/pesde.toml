@@ -1,5 +1,5 @@
-name = "stefanuk12/example_project"
-description = "An opinionated project layout for Roblox exploit scripts."
+name = "stefanuk12/roprobe"
+description = "The associated client for roprobe."
 version = "0.1.0"
 authors = ["Stefanuk12"]
 license = "MIT"
@@ -27,8 +27,8 @@ default = "https://github.com/pesde-pkg/index"
 default = "https://github.com/UpliftGames/wally-index"
 
 [dependencies]
-# Example dependency below, remove it if you don't need it
-promise = { wally = "evaera/promise", version = "^4.0.0" }
+squash = { wally = "data-oriented-house/squash", version = "^5.0.0" }
+trove = { wally = "sleitnick/trove", version = "^1.8.0" }
 
 [dev_dependencies]
 darklua = { repo = "Stefanuk12/darklua", rev = "57e85a0c92db3d0df067ba037ac67ce453b85a66", target = "lune" }
