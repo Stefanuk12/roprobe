@@ -13,7 +13,7 @@
   "luau-lsp.sourcemap.sourcemapFile": "./.meta/sourcemap.json",
   "luau-lsp.sourcemap.generatorCommand": "pesde run sourcemap_generator > .meta/sourcemap.json",
   "luau-lsp.types.robloxSecurityLevel": "RobloxScriptSecurity",
-  "luau-lsp.ignoreGlobs": ["/Packages/**", "/*_packages/**", "/dist.lua"],
+  "luau-lsp.ignoreGlobs": ["/Packages/**", "/*_packages/**", "/client/dist.lua"],
   "luau-lsp.fflags.enableNewSolver": true,
   "luau-lsp.types.definitionFiles": {
     "@custom": "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/environment.d.luau",
@@ -25,8 +25,8 @@
     "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luarmor.d.json",
     "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luraph.d.json"
   ],
-  "selene.configPath": "./.meta/selene.toml",
-  "stylua.configPath": "./.meta/.stylua.toml",
+  "selene.configPath": "./client/.meta/selene.toml",
+  "stylua.configPath": "./client/.meta/.stylua.toml",
   "workbench.editor.customLabels.patterns": {
     "**/init.lua": "${dirname} (${filename}.${extname})",
     "**/init.luau": "${dirname} (${filename}.${extname})"
