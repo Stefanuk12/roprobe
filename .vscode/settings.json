@@ -13,13 +13,18 @@
   "luau-lsp.sourcemap.sourcemapFile": "./client/.meta/sourcemap.json",
   "luau-lsp.sourcemap.generatorCommand": "pesde run sourcemap_generator > .meta/sourcemap.json",
   "luau-lsp.types.robloxSecurityLevel": "RobloxScriptSecurity",
-  "luau-lsp.ignoreGlobs": ["/client/.pesde/**", "/client/Packages/**", "/client/*_packages/**", "/client/dist.lua"],
+  "luau-lsp.ignoreGlobs": [
+    "/client/.pesde/**",
+    "/client/Packages/**",
+    "/client/*_packages/**",
+    "/client/dist.lua"
+  ],
   "luau-lsp.fflags.enableNewSolver": true,
   "luau-lsp.types.definitionFiles": {
     "@custom": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/environment.d.luau",
     "@luarmor": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luarmor.d.luau",
     "@luraph": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luraph.d.luau"
-  }, 
+  },
   "luau-lsp.types.documentationFiles": [
     "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/environment.d.json",
     "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luarmor.d.json",
@@ -66,5 +71,17 @@
     "editor.detectIndentation": false
   },
   "editor.insertSpaces": true,
-  "files.eol": "\n"
+  "files.eol": "\n",
+
+  "files.exclude": {
+    "out": false, // set this to true to hide the "out" folder with the compiled JS files
+    "dist": false // set this to true to hide the "dist" folder with the compiled JS files
+  },
+  "search.exclude": {
+    "out": true, // set this to false to include "out" folder in search results
+    "dist": true // set this to false to include "dist" folder in search results
+  },
+  // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
+  "typescript.tsc.autoDetect": "off",
+  "stylua.targetReleaseVersion": "latest"
 }

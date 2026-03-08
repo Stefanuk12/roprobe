@@ -5,3 +5,6 @@ client/Packages
 client/dist.lua
 client/roblox.d.luau
 client/.meta/sourcemap.json
+
+extension/node_modules
+extension/dist

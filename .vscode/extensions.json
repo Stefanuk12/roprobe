@@ -5,6 +5,9 @@
     "johnnymorganz.stylua",
     "kampfkarren.selene-vscode",
     "tamasfe.even-better-toml",
-    "redhat.vscode-yaml"
+    "redhat.vscode-yaml",
+    "dbaeumer.vscode-eslint",
+    "connor4312.esbuild-problem-matchers",
+    "ms-vscode.extension-test-runner"
   ]
 }
