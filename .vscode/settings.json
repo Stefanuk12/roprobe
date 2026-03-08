@@ -10,20 +10,20 @@
   "luau-lsp.hover.showTableKinds": true,
   "luau-lsp.platform.type": "roblox",
   "luau-lsp.sourcemap.enabled": true,
-  "luau-lsp.sourcemap.sourcemapFile": "./.meta/sourcemap.json",
+  "luau-lsp.sourcemap.sourcemapFile": "./client/.meta/sourcemap.json",
   "luau-lsp.sourcemap.generatorCommand": "pesde run sourcemap_generator > .meta/sourcemap.json",
   "luau-lsp.types.robloxSecurityLevel": "RobloxScriptSecurity",
-  "luau-lsp.ignoreGlobs": ["/Packages/**", "/*_packages/**", "/client/dist.lua"],
+  "luau-lsp.ignoreGlobs": ["/client/.pesde/**", "/client/Packages/**", "/client/*_packages/**", "/client/dist.lua"],
   "luau-lsp.fflags.enableNewSolver": true,
   "luau-lsp.types.definitionFiles": {
-    "@custom": "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/environment.d.luau",
-    "@luarmor": "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luarmor.d.luau",
-    "@luraph": "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luraph.d.luau"
+    "@custom": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/environment.d.luau",
+    "@luarmor": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luarmor.d.luau",
+    "@luraph": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luraph.d.luau"
   }, 
   "luau-lsp.types.documentationFiles": [
-    "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/environment.d.json",
-    "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luarmor.d.json",
-    "./luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luraph.d.json"
+    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/environment.d.json",
+    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luarmor.d.json",
+    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luraph.d.json"
   ],
   "selene.configPath": "./client/.meta/selene.toml",
   "stylua.configPath": "./client/.meta/.stylua.toml",
