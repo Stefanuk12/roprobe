@@ -2,9 +2,11 @@ client/.pesde
 client/*_packages
 client/Packages
 
-client/dist.lua
+client/dist
 client/roblox.d.luau
 client/.meta/sourcemap.json
+
+.direnv
 
 extension/node_modules
 extension/dist

@@ -1,0 +1,54 @@
+# Please read this -> https://github.com/Stefanuk12/luarmor-deploy-action/tree/main
+# NOTE: this only works if you use 2captcha solver
+
+name: Deploy Script to Luarmor
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: Bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/bundle
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: client/dist/main-build.lua
+
+  deploy:
+    runs-on: [self-hosted]
+    needs:
+      - bundle
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { name: "Rocult Paid", script-id: "26bf4fbf77075cc4dc118a1432bdef95" }
+          - { name: "Rocult Free", script-id: "b51589a899a693b4da98f86bbfb79c23" }
+
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./
+
+      - name: Deploy ${{ matrix.target.name }} to Luarmor
+        uses: stefanuk12/luarmor-deploy-action@v2.0.0
+        with:
+          twocaptcha-api-key: ${{ secrets.TWOCAPTCHA_API_KEY }}
+          api-key: ${{ secrets.LUARMOR_API_KEY }}
+          script-id: ${{ matrix.target.script-id }}
+          file: "main-build.lua"

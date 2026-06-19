@@ -6,6 +6,9 @@
     "kampfkarren.selene-vscode",
     "tamasfe.even-better-toml",
     "redhat.vscode-yaml",
+    "fill-labs.dependi",
+    "mkhl.direnv",
+    "hverlin.mise-vscode",
     "dbaeumer.vscode-eslint",
     "connor4312.esbuild-problem-matchers",
     "ms-vscode.extension-test-runner"

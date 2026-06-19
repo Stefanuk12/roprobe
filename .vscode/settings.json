@@ -17,7 +17,7 @@
     "/client/.pesde/**",
     "/client/Packages/**",
     "/client/*_packages/**",
-    "/client/dist.lua"
+    "/client/dist/**"
   ],
   "luau-lsp.fflags.enableNewSolver": true,
   "luau-lsp.types.definitionFiles": {
@@ -31,7 +31,7 @@
     "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luraph.d.json"
   ],
   "selene.configPath": "./client/.meta/selene.toml",
-  "stylua.configPath": "./client/.meta/.stylua.toml",
+  "stylua.configPath": "./client/.meta/stylua.toml",
   "workbench.editor.customLabels.patterns": {
     "**/init.lua": "${dirname} (${filename}.${extname})",
     "**/init.luau": "${dirname} (${filename}.${extname})"
