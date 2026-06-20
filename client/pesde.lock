@@ -5,16 +5,16 @@ name = "stefanuk12/roprobe"
 version = "0.1.0"
 target = "roblox"
 
-[graph."0x5eal/unzip@0.2.0 luau".pkg_ref]
+[graph."0x5eal/unzip@0.2.1 luau".pkg_ref]
 ref_ty = "pesde"
 index_url = "https://github.com/pesde-pkg/index"
 
-[graph."0x5eal/unzip@0.2.0 luau".pkg_ref.dependencies]
-asciitable = [{ name = "kimpure/asciitable", version = "^0.2.3", index = "https://github.com/pesde-pkg/index" }, "dev"]
+[graph."0x5eal/unzip@0.2.1 luau".pkg_ref.dependencies]
+asciitable = [{ name = "kimpure/asciitable", version = "^0.3.8", index = "https://github.com/pesde-pkg/index" }, "dev"]
 dirs = [{ name = "jiwonz/dirs", version = "^0.6.0", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 frktest = [{ name = "itsfrank/frktest", version = "^0.0.4", index = "https://github.com/pesde-pkg/index" }, "dev"]
-luau-lsp = [{ name = "pesde/luau_lsp", version = "=1.53.2", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
-stylua = [{ name = "pesde/stylua", version = "=2.1.0", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
+luau-lsp = [{ name = "pesde/luau_lsp", version = "=1.66.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
+stylua = [{ name = "pesde/stylua", version = "=2.4.1", index = "https://github.com/pesde-pkg/index", target = "lune" }, "dev"]
 
 [graph."jiwonz/dirs@0.6.0 lune".dependencies]
 greentea = ["jiwonz/greentea_luau@0.2.0 luau", "standard"]
@@ -113,7 +113,7 @@ dirs = ["jiwonz/dirs@0.6.0 lune", "standard"]
 option = ["lukadev_0/option@1.2.1 lune", "peer"]
 pathfs = ["jiwonz/pathfs@0.6.0 lune", "standard"]
 result = ["lukadev_0/result@1.2.1 lune", "peer"]
-unzip = ["0x5eal/unzip@0.2.0 luau", "standard"]
+unzip = ["0x5eal/unzip@0.2.1 luau", "standard"]
 
 [graph."pesde/toolchainlib@0.2.2 lune".pkg_ref]
 ref_ty = "pesde"
@@ -135,10 +135,35 @@ repo = "https://github.com/rocult/luau-defs"
 tree_id = "b6c9a4f4713febab292be90d4938cf6d83caf394"
 new_structure = true
 
+[graph."wally#csqrl/dump-parser@0.1.2 roblox".pkg_ref]
+ref_ty = "wally"
+index_url = "https://github.com/UpliftGames/wally-index"
+
 [graph."wally#data-oriented-house/squash@5.0.0 roblox"]
 direct = ["squash", { wally = "wally#data-oriented-house/squash", version = "^5.0.0", index = "default" }, "standard"]
 
 [graph."wally#data-oriented-house/squash@5.0.0 roblox".pkg_ref]
+ref_ty = "wally"
+index_url = "https://github.com/UpliftGames/wally-index"
+
+[graph."wally#dvitash/rbxexplorer@0.1.0 roblox"]
+direct = ["verde_plugin", { repo = "https://github.com/Stefanuk12/Verde", rev = "9c73dec19edf21be414949bdab6b09e5739df5ef", path = "plugin" }, "standard"]
+
+[graph."wally#dvitash/rbxexplorer@0.1.0 roblox".dependencies]
+DumpParser = ["wally#csqrl/dump-parser@0.1.2 roblox", "standard"]
+Promise = ["wally#evaera/promise@4.0.0 roblox", "standard"]
+
+[graph."wally#dvitash/rbxexplorer@0.1.0 roblox".pkg_ref]
+ref_ty = "git"
+repo = "https://github.com/Stefanuk12/Verde"
+tree_id = "c687cc8eda00f2219a9d1e61d41649ee424ed223"
+new_structure = false
+
+[graph."wally#dvitash/rbxexplorer@0.1.0 roblox".pkg_ref.dependencies]
+DumpParser = [{ wally = "wally#csqrl/dump-parser", version = "^0.1.0", index = "https://github.com/UpliftGames/wally-index" }, "standard"]
+Promise = [{ wally = "wally#evaera/promise", version = "^4.0.0", index = "https://github.com/UpliftGames/wally-index" }, "standard"]
+
+[graph."wally#evaera/promise@4.0.0 roblox".pkg_ref]
 ref_ty = "wally"
 index_url = "https://github.com/UpliftGames/wally-index"
 

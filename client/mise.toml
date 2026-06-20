@@ -10,7 +10,7 @@ stylua_args = "-f .meta/stylua.toml -g '**/*.lua' -g '**/*.luau' -g '!**/*.d.lua
 "cargo:rojo" = "7.6.1"
 "cargo:selene" = "0.29.0"
 "cargo:stylua" = { version = "2.4.1", features = "luau" }
-"github:JohnnyMorganz/luau-lsp" = "1.61.0"
+"github:JohnnyMorganz/luau-lsp" = "1.68.1"
 
 [hooks]
 postinstall = "lune run .meta/scripts/postinstall"

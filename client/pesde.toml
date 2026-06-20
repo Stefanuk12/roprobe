@@ -26,11 +26,11 @@ default = "https://github.com/pesde-pkg/index"
 default = "https://github.com/UpliftGames/wally-index"
 
 [dependencies]
+verde_plugin = { repo = "Stefanuk12/Verde", rev = "9c73dec19edf21be414949bdab6b09e5739df5ef", path = "plugin", target = "roblox" }
 squash = { wally = "data-oriented-house/squash", version = "^5.0.0" }
 trove = { wally = "sleitnick/trove", version = "^1.8.0" }
 signal = { wally = "sleitnick/signal", version = "^2.0.3" }
 
-# Tooling (darklua, luau-lsp, rojo, selene, stylua, lune) is managed via mise — see mise.toml
 [dev_dependencies]
 luau_defs = { repo = "rocult/luau-defs", rev = "e628aec6fabb5acfd28f1bc6a18a1c7950122d2c", target = "luau" }
 scripts = { name = "pesde/scripts_rojo", version = "^0.2.0", target = "lune" }

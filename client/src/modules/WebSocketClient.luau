@@ -52,13 +52,13 @@ function WebSocketClient.Initialise(self: WebSocketClient)
     trove:Add(connection)
 
     -- Listen for new messages
-    trove:Add(self._connection.OnMessage:Connect(function(message: string)
+    trove:Add(self._connection.OnMessage:Connect(function(_message: string)
 
     end))    
 end
 
 -- Send a message.
-function WebSocketClient.Send(self: WebSocketClient)
+function WebSocketClient.Send(_self: WebSocketClient)
     
 end
 

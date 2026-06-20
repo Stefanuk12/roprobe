@@ -1,14 +1,21 @@
 {
   "aliases": {
-    "lune": "~/.lune/.typedefs/0.9.4/",
     "pkgs": "./roblox_packages",
     "core": "./src/core",
     "modules": "./src/modules",
-    "shared": "./src/shared",
     "types": "./src/types",
-    "src": "./src"
+    "functions": "./src/functions",
+    "src": "./src",
+    "verde": "./roblox_packages/.pesde/dvitash_rbxexplorer@0.1.0/rbxexplorer/src/ServerStorage/Plugin",
+    "lune": "~/.lune/.typedefs/0.9.4/"
   },
-  "globals": [],
+  "globals": [
+    "WebSocket",
+    "getgenv",
+    "loadstring",
+    "getfenv",
+    "setfenv"
+  ],
   "languageMode": "strict",
   "lint": {},
   "lintErrors": true,
