@@ -89,7 +89,7 @@ function Logger.FormatLog(level: LogLevel, prefix: string, ...)
 end
 
 --- Append the log to the file.
-function Logger.append(self: Logger, logLevel: LogLevel, prefix: string?, logEntry: string): string?
+function Logger.append(self: Logger, logLevel: LogLevel, prefix: string?, ...): string?
     if LogLevelValue[logLevel] < self._logLevel then
         return nil
     end
@@ -98,7 +98,7 @@ function Logger.append(self: Logger, logLevel: LogLevel, prefix: string?, logEnt
         return nil
     end
 
-    logEntry = Logger.FormatLog(logLevel, prefix or "", logEntry)
+    local logEntry = Logger.FormatLog(logLevel, prefix or "", ...)
     if LOGGER_ENABLED then
         pcall(appendfile, self._logFile, logEntry .. "\n")
     end

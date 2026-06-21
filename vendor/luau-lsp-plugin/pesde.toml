@@ -1,0 +1,16 @@
+name = "stefanuk12/luau_lsp_plugin"
+description = "Vendored Luau Language Server Studio companion plugin (JohnnyMorganz/luau-lsp)."
+version = "0.1.0"
+authors = ["JohnnyMorganz"]
+license = "MIT"
+repository = "https://github.com/JohnnyMorganz/luau-lsp"
+
+[engines]
+pesde = "^0.7.1"
+
+[target]
+build_files = ["luau-lsp/plugin/src"]
+environment = "roblox"
+
+[indices]
+default = "https://github.com/pesde-pkg/index"

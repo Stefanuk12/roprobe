@@ -7,6 +7,10 @@
       "$path": "roblox_packages"
     },
 
+    "luau_lsp_plugin": {
+      "$path": "../vendor/luau-lsp-plugin/luau-lsp/plugin/src"
+    },
+
     "src": {
       "$path": "src"
     }

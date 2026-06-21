@@ -53,7 +53,7 @@ description = "Check the source via luau-lsp"
 depends = ["deps", "fetch-types"]
 # Settings live in the monorepo-root .vscode/settings.json (paths are client/-prefixed),
 # so run the analysis from the repo root.
-run = "cd .. && luau-lsp analyze --settings .vscode/settings.json --definitions \"@roblox=./client/roblox.d.luau\" --ignore /client/roblox_packages/** client/src"
+run = "cd .. && luau-lsp analyze --settings .vscode/settings.json --definitions \"@roblox=./client/roblox.d.luau\" --ignore /client/roblox_packages/** --ignore /vendor/** client/src"
 
 [tasks.build]
 description = "Build the script via darklua (no args = build main)"

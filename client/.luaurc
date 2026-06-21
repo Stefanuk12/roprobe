@@ -7,6 +7,7 @@
     "functions": "./src/functions",
     "src": "./src",
     "verde": "./roblox_packages/.pesde/dvitash_rbxexplorer@0.1.0/rbxexplorer/src/ServerStorage/Plugin",
+    "luau_lsp": "../vendor/luau-lsp-plugin/luau-lsp/plugin/src",
     "lune": "~/.lune/.typedefs/0.9.4/"
   },
   "globals": [

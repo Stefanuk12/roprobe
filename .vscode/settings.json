@@ -17,7 +17,8 @@
     "/client/.pesde/**",
     "/client/Packages/**",
     "/client/*_packages/**",
-    "/client/dist/**"
+    "/client/dist/**",
+    "/vendor/**"
   ],
   "luau-lsp.fflags.enableNewSolver": true,
   "luau-lsp.types.definitionFiles": {
