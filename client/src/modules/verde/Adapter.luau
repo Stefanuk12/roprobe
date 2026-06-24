@@ -138,10 +138,10 @@ function Adapter.connect(self: Adapter): boolean
         if not handleOk then
             Logger:warn("adapter", `error handling message: {err}`)
         end
-    end))
+    end), "Disconnect")
     trove:Add(socket.OnClose:Connect(function()
         self:onClosed()
-    end))
+    end), "Disconnect")
 
 	self:debugPrint("connected to", self.url)
 	local onConnect: (() -> ())? = self.messageHandlers.connect
