@@ -1,6 +1,6 @@
 name = "stefanuk12/roprobe"
 description = "The associated client for roprobe."
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 authors = ["Stefanuk12"]
 license = "MIT"
 includes = ["pesde.toml", "README.md", "LICENSE", "src/*"]
