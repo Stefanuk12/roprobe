@@ -8,7 +8,7 @@ EnumBuilder.__index = EnumBuilder
 -- Types
 export type EnumItem<Type, Data> = { type: Type, data: Data }
 export type EnumBuilderData = {
-    _variants: { [number]: Squash.SerDes<()> }
+    _variants: { [number]: Squash.SerDes<()> },
 }
 export type EnumBuilder = setmetatable<EnumBuilderData, typeof(EnumBuilder)>
 

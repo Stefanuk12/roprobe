@@ -2,11 +2,11 @@
 local RunService = cloneref(game:GetService("RunService"))
 
 -- Dependencies
-local Trove = require("@pkgs/trove")
 local Config = require("@verde/Shared/Config")
 local Shims = require("@modules/verde/shims")
 local StateController = require("@verde/States/StateController")
 local States = require("@verde/States")
+local Trove = require("@pkgs/trove")
 
 -- Types
 export type VerdeData = {

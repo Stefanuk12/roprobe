@@ -57,7 +57,7 @@ function Manager.init(self: Manager)
         if not self._connected then
             return
         end
-        
+
         local ok, err = pcall(function()
             self:sendFullDMInfo()
         end)

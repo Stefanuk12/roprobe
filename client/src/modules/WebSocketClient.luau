@@ -1,6 +1,6 @@
 -- Dependencies
-local Trove = require("@pkgs/trove")
 local Signal = require("@pkgs/signal")
+local Trove = require("@pkgs/trove")
 
 --- A wrapper around the websocket client.
 local WebSocketClient = {}
@@ -52,14 +52,10 @@ function WebSocketClient.Initialise(self: WebSocketClient)
     trove:Add(connection)
 
     -- Listen for new messages
-    trove:Add(self._connection.OnMessage:Connect(function(_message: string)
-
-    end))    
+    trove:Add(self._connection.OnMessage:Connect(function(_message: string) end))
 end
 
 -- Send a message.
-function WebSocketClient.Send(_self: WebSocketClient)
-    
-end
+function WebSocketClient.Send(_self: WebSocketClient) end
 
 return WebSocketClient

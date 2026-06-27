@@ -1,13 +1,13 @@
 -- Dependencies
 local Adapter = require("@modules/verde/Adapter")
-local executeLuau = require("@modules/verde/execute_luau")
 local ChangeHistoryHelper = require("@verde/Shared/ChangeHistoryService")
 local Operations = require("@verde/Operations")
 local Signal = require("@pkgs/signal")
-local patchInstanceMap = require("@self/patchInstanceMap")
 local SoundPlayer = require("@verde/Shared/SoundPlayer")
 local SoundPreview = require("@self/SoundPreview")
 local WebSocketClient = require("@verde/WebSocketClient")
+local executeLuau = require("@modules/verde/execute_luau")
+local patchInstanceMap = require("@self/patchInstanceMap")
 
 -- Types
 type SoundInfo = SoundPreview.SoundInfo

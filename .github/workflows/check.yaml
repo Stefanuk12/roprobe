@@ -24,7 +24,7 @@ jobs:
 
       - name: Format check
         working-directory: client
-        run: mise fmt-check
+        run: mise format-check
 
       - name: Lint
         working-directory: client

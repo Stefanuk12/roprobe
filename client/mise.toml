@@ -21,7 +21,7 @@ run = "lune run .meta/scripts/install-darklua"
 
 [tasks.deps]
 description = "Install pesde dependencies"
-run = "pesde install"
+run = "~/.pesde/bin/pesde install"
 sources = ["pesde.toml", "pesde.lock"]
 outputs = ["roblox_packages/**", "luau_packages/**", "lune_packages/**"]
 
@@ -29,11 +29,11 @@ outputs = ["roblox_packages/**", "luau_packages/**", "lune_packages/**"]
 description = "Lint the source via selene"
 run = "selene --config .meta/selene.toml src/"
 
-[tasks.fmt]
+[tasks.format]
 description = "Format the source via stylua"
 run = "stylua {{ vars.stylua_args }} -- ."
 
-[tasks.fmt-check]
+[tasks.format-check]
 description = "Check formatting of the source via stylua"
 run = "stylua {{ vars.stylua_args }} --check -- ."
 
@@ -70,7 +70,7 @@ run = "lune run .meta/scripts/init"
 
 [tasks.ci]
 description = "Run the entire CI pipeline"
-depends = ["sourcemap", "lint", "fmt-check", "check", "build main"]
+depends = ["sourcemap", "lint", "format-check", "check", "build main"]
 
 [tasks.cd]
 description = "Run the entire CD pipeline"

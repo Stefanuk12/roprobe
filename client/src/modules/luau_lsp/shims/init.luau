@@ -30,7 +30,11 @@ function Shims.Destroy(_self: Shims) end
 
 --- `ServerEndpoints` HTTP transport -> executor `request` (no `HttpService`).
 function Shims._PatchServerEndpoints(_self: Shims)
-    function ServerEndpoints.full(address: string, tree: EncodedInstance): Result<HttpResponse, string>
+    -- We deliberately overwrite the vendored endpoints. luau-lsp's new solver mis-expands the
+    -- field's `Result<HttpResponse, string>` type and fails its own subtyping check ("invalid
+    -- path"), so patch through an `any` view; the replacement bodies are still type-checked.
+    local Endpoints: any = ServerEndpoints
+    function Endpoints.full(address: string, tree: EncodedInstance): Result<HttpResponse, string>
         return Http({
             Method = "POST",
             Url = `{address}/full`,
@@ -43,14 +47,14 @@ function Shims._PatchServerEndpoints(_self: Shims)
         })
     end
 
-    function ServerEndpoints.clear(address: string): Result<HttpResponse, string>
+    function Endpoints.clear(address: string): Result<HttpResponse, string>
         return Http({
             Method = "POST",
             Url = `{address}/clear`,
         })
     end
 
-    function ServerEndpoints.getFilePaths(address: string): Result<HttpResponse, string>
+    function Endpoints.getFilePaths(address: string): Result<HttpResponse, string>
         return Http({
             Method = "GET",
             Url = `{address}/get-file-paths`,
