@@ -4,6 +4,7 @@ local executeLuau = require("@modules/verde/execute_luau")
 local ChangeHistoryHelper = require("@verde/Shared/ChangeHistoryService")
 local Operations = require("@verde/Operations")
 local Signal = require("@pkgs/signal")
+local patchInstanceMap = require("@self/patchInstanceMap")
 local SoundPlayer = require("@verde/Shared/SoundPlayer")
 local SoundPreview = require("@self/SoundPreview")
 local WebSocketClient = require("@verde/WebSocketClient")
@@ -99,12 +100,19 @@ function Shims._PatchOperations(_self: Shims)
     Operations.execute_luau = executeLuau
 end
 
+--- `InstanceMap` -> store every instance as a `cloneref` so the plugin operates
+--- through hook-free references. Must run before Verde populates the map.
+function Shims._PatchInstanceMap(_self: Shims)
+    patchInstanceMap()
+end
+
 --- Install every patch.
 function Shims.Apply(self: Shims)
     self:_PatchWebSocket()
     self:_PatchChangeHistory()
     self:_PatchSoundPlayer()
     self:_PatchOperations()
+    self:_PatchInstanceMap()
 end
 
 return Shims
