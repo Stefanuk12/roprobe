@@ -10,3 +10,6 @@ client/.meta/sourcemap.json
 
 extension/node_modules
 extension/dist
+extension/bin
+
+broker/target

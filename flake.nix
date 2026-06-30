@@ -47,6 +47,7 @@
             echo "🌙 dev shell ready"
             echo "   Tools managed by mise (config in client/) - 'cd client' then 'mise ls'"
             echo "   Run 'cd client && mise t' to see available tasks"
+            echo "   Broker (Rust) lives in broker/ - 'cd broker && cargo run'"
           '';
         };
       }

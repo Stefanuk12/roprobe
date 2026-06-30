@@ -1,4 +1,5 @@
 # roprobe
+
 A tool and extension for inspecting Roblox games.
 
 ## Features
@@ -13,8 +14,15 @@ A tool and extension for inspecting Roblox games.
 > Run the currently opened `.lua`/`.luau` script from your IDE.
 - [ ] Output redirection
 > View the output and errors from your script, directly within your IDE.
+- [ ] MCP support
+> Allow AI to interact with the game.
 - [ ] Multi-instance support
 > Select which instance to use, when many are active.
+
+## Setup
+
+> [!WARNING]
+> This project is under active development so it takes some work to get working.
 
 ## Credit and inspirations
 

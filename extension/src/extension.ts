@@ -1,26 +1,35 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
+import { BrokerManager } from "./broker";
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
+let broker: BrokerManager | undefined;
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "roprobe" is now active!');
+// This method is called when your extension is activated.
+export async function activate(context: vscode.ExtensionContext) {
+	broker = new BrokerManager(context);
+	context.subscriptions.push(broker);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('roprobe.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from roprobe!');
-	});
+	context.subscriptions.push(
+		vscode.commands.registerCommand("roprobe.restartBroker", async () => {
+			try {
+				await broker?.restart();
+				vscode.window.showInformationMessage("roprobe: broker restarted");
+			} catch (err) {
+				vscode.window.showErrorMessage(`roprobe: broker failed to start — ${String(err)}`);
+			}
+		}),
+	);
 
-	context.subscriptions.push(disposable);
+	// Bring the broker up on activation. Failures here are non-intrusive (logged to
+	// the "roprobe" output channel) so a not-yet-built binary doesn't nag on startup.
+	try {
+		await broker.start();
+	} catch (err) {
+		console.error("roprobe: broker failed to start —", err);
+	}
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+// This method is called when your extension is deactivated.
+export function deactivate() {
+	broker?.dispose();
+	broker = undefined;
+}

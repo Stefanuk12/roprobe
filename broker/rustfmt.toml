@@ -1,0 +1,5 @@
+# Requires nightly rustfmt: `cargo +nightly fmt`
+# Merge same-crate imports into a single nested `use` block.
+imports_granularity = "Crate"
+# Keep imports grouped as std / external crates / crate, in that order.
+group_imports = "StdExternalCrate"

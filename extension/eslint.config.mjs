@@ -22,6 +22,7 @@ export default [{
         curly: "warn",
         eqeqeq: "warn",
         "no-throw-literal": "warn",
+        quotes: ["warn", "double"],
         semi: "warn",
     },
 }];

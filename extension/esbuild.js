@@ -1,7 +1,38 @@
 const esbuild = require("esbuild");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+
+/**
+ * Copy the compiled broker binary into bin/<platform>-<arch>/ so it ships inside
+ * the VSIX and BrokerManager can spawn it. Resilient: warns (does not fail) if the
+ * binary hasn't been built yet.
+ * @type {import('esbuild').Plugin}
+ */
+const copyBrokerBinaryPlugin = {
+	name: 'copy-broker-binary',
+	setup(build) {
+		build.onEnd(() => {
+			const exe = process.platform === 'win32' ? 'broker.exe' : 'broker';
+			const profile = production ? 'release' : 'debug';
+			const src = path.resolve(__dirname, '..', 'broker', 'target', profile, exe);
+			const destDir = path.resolve(__dirname, 'bin', `${process.platform}-${process.arch}`);
+			const dest = path.join(destDir, exe);
+			if (!fs.existsSync(src)) {
+				console.warn(`[copy-broker] ${src} not found — run 'cargo build${production ? ' --release' : ''}' in broker/ (skipping)`);
+				return;
+			}
+			fs.mkdirSync(destDir, { recursive: true });
+			fs.copyFileSync(src, dest);
+			if (process.platform !== 'win32') {
+				fs.chmodSync(dest, 0o755);
+			}
+			console.log(`[copy-broker] ${src} -> ${dest}`);
+		});
+	},
+};
 
 /**
  * @type {import('esbuild').Plugin}
@@ -38,6 +69,7 @@ async function main() {
 		external: ['vscode'],
 		logLevel: 'silent',
 		plugins: [
+			copyBrokerBinaryPlugin,
 			/* add to the end of plugins array */
 			esbuildProblemMatcherPlugin,
 		],
