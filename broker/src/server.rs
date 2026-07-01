@@ -105,7 +105,7 @@ async fn handle_connection(
                     shutdown.notify_one();
                     break;
                 }
-                Ok(message) => debug!(%peer, kind = message.kind(), "client message"),
+                // Ok(message) => debug!(%peer, kind = message.kind(), "client message"),
                 Err(_) => debug!(%peer, "text frame: {text}"),
             },
             Message::Binary(bytes) => debug!(%peer, bytes = bytes.len(), "binary frame"),

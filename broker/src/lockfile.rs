@@ -44,7 +44,7 @@ impl Lockfile {
     }
 
     pub fn remove(&self) {
-        std::fs::remove_file(Self::path());
+        let _ = std::fs::remove_file(Self::path());
     }
 }
 
