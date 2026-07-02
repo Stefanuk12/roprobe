@@ -1,15 +1,12 @@
-//! The local WebSocket listener that brokers connections between the Roblox
-//! client and editor-side clients.
-
 use std::{net::SocketAddr, sync::Arc};
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{StreamExt, stream::SplitSink};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Notify,
 };
 use tokio_tungstenite::{
-    accept_hdr_async,
+    WebSocketStream, accept_hdr_async,
     tungstenite::{
         Message,
         handshake::server::{ErrorResponse, Request, Response},
@@ -18,12 +15,10 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::protocol::ClientMessage;
+use crate::protocol::{ClientMessage, ServerMessage};
 
-/// Bind on loopback only. Port 0 lets the OS assign a free port.
-pub async fn bind(port: u16) -> std::io::Result<TcpListener> {
-    TcpListener::bind(("127.0.0.1", port)).await
-}
+import!(session);
+pub type WsWrite = SplitSink<WebSocketStream<TcpStream>, Message>;
 
 /// Constantly accept connections until we're forced to exit.
 pub async fn run(listener: TcpListener, token: String) {
@@ -59,6 +54,11 @@ pub async fn run(listener: TcpListener, token: String) {
     }
 }
 
+/// Bind on loopback only. Port 0 lets the OS assign a free port.
+pub async fn bind(port: u16) -> std::io::Result<TcpListener> {
+    TcpListener::bind(("127.0.0.1", port)).await
+}
+
 async fn handle_connection(
     stream: TcpStream,
     peer: SocketAddr,
@@ -73,42 +73,33 @@ async fn handle_connection(
             .map(|query| query_has_token(query, token.as_str()))
             .unwrap_or(false);
 
-        if authorized {
-            Ok(response)
-        } else {
+        if !authorized {
             let denied = HttpResponse::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Some("invalid or missing token".to_string()))
                 .expect("build unauthorized response");
-            Err(denied)
+            return Err(denied)
         }
+
+        Ok(response)
     };
 
     // Accept the connection
     let ws = accept_hdr_async(stream, callback).await?;
     info!(%peer, "client connected");
 
-    let (mut write, mut read) = ws.split();
-    write
-        .send(Message::Text(
-            "{\"type\":\"hello\",\"role\":\"broker\"}".into(),
-        ))
-        .await?;
+    let (write, mut read) = ws.split();
+    let mut session = Session::new(peer, write, shutdown);
+    session.send(ServerMessage::Hello).await?;
 
-    // Minimal loop for now: log frames so connectivity is observable. Real
-    // routing (game <-> editor clients) lands when the protocol is wired up.
+    // Constantly listen for new messages and handle them.
     while let Some(msg) = read.next().await {
         match msg? {
-            Message::Text(text) => match ClientMessage::from_json(&text) {
-                Ok(ClientMessage::Shutdown) => {
-                    info!(%peer, "client requested shutdown");
-                    shutdown.notify_one();
-                    break;
-                }
-                // Ok(message) => debug!(%peer, kind = message.kind(), "client message"),
-                Err(_) => debug!(%peer, "text frame: {text}"),
+            Message::Binary(bytes) => match ClientMessage::from_bytes(bytes) {
+                Ok(message) => session.handle(message).await?,
+                Err(e) => debug!(%peer, "undecodable binary frame: {e}"),
             },
-            Message::Binary(bytes) => debug!(%peer, bytes = bytes.len(), "binary frame"),
+            Message::Text(text) => debug!(%peer, "text frame: {text}"),
             Message::Close(_) => break,
             _ => {}
         }

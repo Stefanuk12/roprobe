@@ -1,7 +1,7 @@
 use std::{io, process::Command, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::connect_async;
 use tracing::{info, warn};
 
 use crate::{
@@ -32,8 +32,7 @@ pub async fn stop(args: StopArgs) -> CommandResult {
     })?;
 
     // ... and request a shutdown
-    let frame = serde_json::to_string(&ClientMessage::Shutdown).expect("serialize shutdown");
-    ws.send(Message::Text(frame.into()))
+    ws.send(ClientMessage::Shutdown.try_into()?)
         .await
         .map_err(io::Error::other)?;
 
