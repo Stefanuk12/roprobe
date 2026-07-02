@@ -42,9 +42,9 @@ description = "Download Roblox type definitions"
 run = "curl -fsSL https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.d.lua -o ./roblox.d.luau"
 
 [tasks.sourcemap]
-description = "Generate sourcemap via rojo"
+description = "Generate sourcemap via rojo, re-rooted to the monorepo root for luau-lsp"
 depends = ["deps"]
-run = "rojo sourcemap default.project.json --output .meta/sourcemap.json"
+run = "lune run .meta/scripts/sourcemap"
 sources = ["default.project.json", "src/**/*.luau"]
 outputs = [".meta/sourcemap.json"]
 

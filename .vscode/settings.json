@@ -11,7 +11,7 @@
   "luau-lsp.platform.type": "roblox",
   "luau-lsp.sourcemap.enabled": true,
   "luau-lsp.sourcemap.sourcemapFile": "./client/.meta/sourcemap.json",
-  "luau-lsp.sourcemap.generatorCommand": "pesde run sourcemap_generator > .meta/sourcemap.json",
+  "luau-lsp.sourcemap.generatorCommand": "cd client && lune run .meta/scripts/sourcemap",
   "luau-lsp.types.robloxSecurityLevel": "RobloxScriptSecurity",
   "luau-lsp.ignoreGlobs": [
     "/client/.pesde/**",
