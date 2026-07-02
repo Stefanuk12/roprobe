@@ -88,7 +88,7 @@ function SoundPreview.play(self: SoundPreview, sourceSound: Sound, sourceId: str
         return false, tostring(err)
     end
 
-    local connection
+    local connection: RBXScriptConnection
     connection = cloned.Ended:Once(function()
         globalTrove:Remove(connection)
         if self.currentSound == cloned then
