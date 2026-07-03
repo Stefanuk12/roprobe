@@ -1,5 +1,7 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::upstream;
+
 /// roprobe broker - brokers traffic between Roblox, and the extensions / other clients.
 #[derive(Debug, Parser)]
 #[command(name = "broker", version, about, long_about = None)]
@@ -27,12 +29,42 @@ pub enum Command {
     Stop(StopArgs),
 }
 
-#[derive(Debug, Default, Args)]
+#[derive(Debug, Args)]
 pub struct RunArgs {
     /// Port to bind on loopback.
     /// `0`` (the default) lets the OS pick a free port.
     #[arg(long, default_value_t = 0)]
     pub port: u16,
+
+    /// Port of verde's WebSocket server to (re)connect to.
+    #[arg(long, default_value_t = upstream::verde::DEFAULT_PORT)]
+    pub verde_port: u16,
+
+    /// Port of the luau-lsp studio plugin server to (re)connect to.
+    #[arg(long, default_value_t = upstream::luau_lsp::DEFAULT_PORT)]
+    pub luau_lsp_port: u16,
+
+    /// Start with the verde connection disabled.
+    /// Clients can still enable it at runtime.
+    #[arg(long)]
+    pub no_verde: bool,
+
+    /// Start with luau-lsp studio plugin server probing disabled.
+    /// Clients can still enable it at runtime.
+    #[arg(long)]
+    pub no_luau_lsp: bool,
+}
+
+impl Default for RunArgs {
+    fn default() -> Self {
+        Self {
+            port: 0,
+            verde_port: upstream::verde::DEFAULT_PORT,
+            luau_lsp_port: upstream::luau_lsp::DEFAULT_PORT,
+            no_verde: false,
+            no_luau_lsp: false,
+        }
+    }
 }
 
 #[derive(Debug, Default, Args)]

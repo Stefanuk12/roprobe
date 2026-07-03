@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::upstream::Upstream;
+
 /// Contains all the possible inbound events from a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
     /// Ask the broker to shut itself down gracefully.
     Shutdown,
+    /// Enable or disable the broker's connection to an upstream tool.
+    SetUpstream { upstream: Upstream, enabled: bool },
 }
 
 impl ClientMessage {
@@ -22,6 +26,7 @@ impl ClientMessage {
     pub fn kind(&self) -> &'static str {
         match self {
             ClientMessage::Shutdown => "shutdown",
+            ClientMessage::SetUpstream { .. } => "set-upstream",
         }
     }
 }
@@ -44,6 +49,23 @@ mod tests {
         assert!(matches!(
             ClientMessage::from_bytes(bytes).unwrap(),
             ClientMessage::Shutdown
+        ));
+    }
+
+    #[test]
+    fn set_upstream_round_trips() {
+        let msg = ClientMessage::SetUpstream {
+            upstream: Upstream::Verde,
+            enabled: false,
+        };
+        let bytes = msg.to_bytes().unwrap();
+        println!("set-upstream frame: {bytes:?}");
+        assert!(matches!(
+            ClientMessage::from_bytes(bytes).unwrap(),
+            ClientMessage::SetUpstream {
+                upstream: Upstream::Verde,
+                enabled: false,
+            }
         ));
     }
 }

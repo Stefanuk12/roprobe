@@ -4,19 +4,20 @@ use futures_util::SinkExt;
 use tokio::sync::Notify;
 use tracing::{debug, info};
 
-use crate::{Result, protocol::{ClientMessage, ServerMessage}, server::WsWrite};
+use crate::{Result, protocol::{ClientMessage, ServerMessage}, server::WsWrite, upstream::Controls};
 
 /// The broker's side of one accepted client connection.
 pub struct Session {
     peer: SocketAddr,
     write: WsWrite,
     shutdown: Arc<Notify>,
+    controls: Arc<Controls>,
 }
 
 impl Session {
     /// Create a new session.
-    pub fn new(peer: SocketAddr, write: WsWrite, shutdown: Arc<Notify>) -> Self {
-        Self { peer, write, shutdown }
+    pub fn new(peer: SocketAddr, write: WsWrite, shutdown: Arc<Notify>, controls: Arc<Controls>) -> Self {
+        Self { peer, write, shutdown, controls }
     }
 
     /// Send a message.
@@ -32,6 +33,11 @@ impl Session {
             ClientMessage::Shutdown => {
                 info!(peer = %self.peer, "client requested shutdown");
                 self.shutdown.notify_one();
+            }
+            ClientMessage::SetUpstream { upstream, enabled } => {
+                info!(peer = %self.peer, ?upstream, enabled, "client set upstream");
+                self.controls.set(upstream, enabled);
+                self.send(ServerMessage::UpstreamChanged { upstream, enabled }).await?;
             }
         }
         Ok(())

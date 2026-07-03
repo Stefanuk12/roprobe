@@ -1,10 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+use crate::upstream::Upstream;
+
 /// Contains all the possible outbound events to a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMessage {
     /// Greet a client whose connection was just accepted.
     Hello,
+    /// Confirm that an upstream connection was enabled or disabled.
+    UpstreamChanged { upstream: Upstream, enabled: bool },
 }
 
 impl ServerMessage {

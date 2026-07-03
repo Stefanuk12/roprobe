@@ -15,15 +15,19 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::protocol::{ClientMessage, ServerMessage};
+use crate::{
+    protocol::{ClientMessage, ServerMessage},
+    upstream::Controls,
+};
 
 import!(session);
 pub type WsWrite = SplitSink<WebSocketStream<TcpStream>, Message>;
 
 /// Constantly accept connections until we're forced to exit.
-pub async fn run(listener: TcpListener, token: String) {
+pub async fn run(listener: TcpListener, token: String, controls: Controls) {
     let token = Arc::new(token);
     let shutdown = Arc::new(Notify::new());
+    let controls = Arc::new(controls);
 
     loop {
         tokio::select! {
@@ -32,9 +36,10 @@ pub async fn run(listener: TcpListener, token: String) {
                     Ok((stream, peer)) => {
                         let token = Arc::clone(&token);
                         let shutdown = Arc::clone(&shutdown);
+                        let controls = Arc::clone(&controls);
 
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, peer, token, shutdown).await {
+                            if let Err(e) = handle_connection(stream, peer, token, shutdown, controls).await {
                                 warn!(%peer, "connection ended: {e}");
                             }
                         });
@@ -64,6 +69,7 @@ async fn handle_connection(
     peer: SocketAddr,
     token: Arc<String>,
     shutdown: Arc<Notify>,
+    controls: Arc<Controls>,
 ) -> crate::Result<()> {
     // Verify the auth token, otherwise reject the request.
     let callback = move |req: &Request, response: Response| -> Result<Response, ErrorResponse> {
@@ -88,8 +94,11 @@ async fn handle_connection(
     let ws = accept_hdr_async(stream, callback).await?;
     info!(%peer, "client connected");
 
+    // Upstream connections only run while at least one session is counted.
+    let _session = controls.track_session();
+
     let (write, mut read) = ws.split();
-    let mut session = Session::new(peer, write, shutdown);
+    let mut session = Session::new(peer, write, shutdown, Arc::clone(&controls));
     session.send(ServerMessage::Hello).await?;
 
     // Constantly listen for new messages and handle them.
