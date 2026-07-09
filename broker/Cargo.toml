@@ -15,3 +15,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 squash = { git = "https://github.com/Stefanuk12/squash-rs" }
 thiserror = "2.0"
+rbx_dom_weak = "4.2.0"
+
+# Temporary: the local squash-rs has an unpushed `Axes` read-path fix
+# (bottom/front were transposed). Remove once it's committed + pushed and
+# `cargo update -p squash` picks it up.
+[patch."https://github.com/Stefanuk12/squash-rs"]
+squash = { path = "../../squash-rs/squash" }

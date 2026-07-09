@@ -1,26 +1,16 @@
 -- Dependencies
-local LuauLSP = require("@modules/luau_lsp")
-local Verde = require("@modules/verde")
-local globalTrove = require("@core/globalTrove")
+local Broker = require("@features/broker")
+local globalTrove = require("@engine/globalTrove")
 
 -- Vars
-local config = {
-    host = "localhost",
+-- The broker owns the upstream (Verde / luau-lsp) connections; this client only
+-- links to it, mirrors the DataModel and says which upstreams it wants on.
+-- Host/port/token come from `getgenv().roprobe_config` (or the broker lockfile).
+local config: Broker.Config = {
     verde = true,
     luauLsp = false,
 }
 
--- Load Verde
-if config.verde then
-    local verde = globalTrove:Add(Verde.new(`ws://{config.host}:9000`))
-    verde:Start()
-end
-
--- Load the Luau Language Server companion
--- NOTE: this does not use lazy loading and can take a while on some games, recommended to disable for now.
-if config.luauLsp then
-    local luauLsp = globalTrove:Add(LuauLSP.new({
-        host = config.host,
-    }))
-    luauLsp:Start()
-end
+-- Connect to the broker and start streaming the tree.
+local broker = globalTrove:Add(Broker.new(config))
+broker:Start()

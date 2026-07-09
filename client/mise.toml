@@ -6,22 +6,19 @@ all_compile = false
 stylua_args = "-f .meta/stylua.toml -g '**/*.lua' -g '**/*.luau' -g '!**/*.d.luau'"
 
 [tools]
-"cargo:lune" = "0.9.4"
-"cargo:rojo" = "7.6.1"
-"cargo:selene" = "0.29.0"
-"cargo:stylua" = { version = "2.4.1", features = "luau" }
+"github:Stefanuk12/darklua" = "0.19.0"
+"github:lune-org/lune" = "0.10.2"
 "github:JohnnyMorganz/luau-lsp" = "1.68.1"
+"github:rojo-rbx/rojo" = "7.7.0"
+"aqua:Kampfkarren/selene" = "0.31.0"
+"aqua:JohnnyMorganz/StyLua" = "2.5.2"
 
 [hooks]
 postinstall = "lune run .meta/scripts/postinstall"
 
-[tasks.install-darklua]
-description = "Build and install the custom darklua fork (idempotent)"
-run = "lune run .meta/scripts/install-darklua"
-
 [tasks.deps]
 description = "Install pesde dependencies"
-run = "~/.pesde/bin/pesde install"
+run = "pesde install"
 sources = ["pesde.toml", "pesde.lock"]
 outputs = ["roblox_packages/**", "luau_packages/**", "lune_packages/**"]
 
@@ -31,18 +28,18 @@ run = "selene --config .meta/selene.toml src/"
 
 [tasks.format]
 description = "Format the source via stylua"
-run = "stylua {{ vars.stylua_args }} -- ."
+run = "stylua {{ vars.stylua_args }} -- src"
 
 [tasks.format-check]
 description = "Check formatting of the source via stylua"
-run = "stylua {{ vars.stylua_args }} --check -- ."
+run = "stylua {{ vars.stylua_args }} --check -- src"
 
 [tasks.fetch-types]
 description = "Download Roblox type definitions"
 run = "curl -fsSL https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.d.lua -o ./roblox.d.luau"
 
 [tasks.sourcemap]
-description = "Generate sourcemap via rojo, re-rooted to the monorepo root for luau-lsp"
+description = "Generate sourcemap via rojo (paths re-rooted to the monorepo root)"
 depends = ["deps"]
 run = "lune run .meta/scripts/sourcemap"
 sources = ["default.project.json", "src/**/*.luau"]
@@ -51,9 +48,7 @@ outputs = [".meta/sourcemap.json"]
 [tasks.check]
 description = "Check the source via luau-lsp"
 depends = ["deps", "fetch-types"]
-# Settings live in the monorepo-root .vscode/settings.json (paths are client/-prefixed),
-# so run the analysis from the repo root.
-run = "cd .. && luau-lsp analyze --settings .vscode/settings.json --definitions \"@roblox=./client/roblox.d.luau\" --ignore /client/roblox_packages/** --ignore /vendor/** client/src"
+run = "luau-lsp analyze --settings .vscode/settings.json --definitions \"@roblox=./roblox.d.luau\" --ignore /roblox_packages/** src"
 
 [tasks.build]
 description = "Build the script via darklua (no args = build main)"
@@ -67,6 +62,10 @@ run = "lune run .meta/scripts/clean"
 [tasks.init]
 description = "Initialise the project with all relevant information"
 run = "lune run .meta/scripts/init"
+
+[tasks.check-update]
+description = "Sync CLAUDE.md from upstream if newer and locally unedited (append 'rebaseline' to re-record the lock)"
+run = "lune run .meta/scripts/check-update"
 
 [tasks.ci]
 description = "Run the entire CI pipeline"

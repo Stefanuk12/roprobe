@@ -1,4 +1,4 @@
-use broker::{Result, Cli, commands, logging};
+use broker::{Cli, Result, commands, logging};
 use clap::Parser;
 
 #[tokio::main]

@@ -127,12 +127,12 @@ result = [{ name = "lukadev_0/result", version = "^1.2.1", index = "https://gith
 unzip = [{ name = "0x5eal/unzip", version = "^0.2.0", index = "https://github.com/pesde-pkg/index", target = "luau" }, "standard"]
 
 [graph."stefanuk12/luau_defs@0.2.4 luau"]
-direct = ["luau_defs", { repo = "https://github.com/rocult/luau-defs", rev = "e628aec6fabb5acfd28f1bc6a18a1c7950122d2c" }, "dev"]
+direct = ["luau_defs", { repo = "https://github.com/rocult/luau-defs", rev = "d2b15bf4f96365f9bd76c1c85157ce4dd0dee94e" }, "dev"]
 
 [graph."stefanuk12/luau_defs@0.2.4 luau".pkg_ref]
 ref_ty = "git"
 repo = "https://github.com/rocult/luau-defs"
-tree_id = "b6c9a4f4713febab292be90d4938cf6d83caf394"
+tree_id = "bd5c4952669953859eed1474560435daaf134727"
 new_structure = true
 
 [graph."wally#csqrl/dump-parser@0.1.2 roblox".pkg_ref]

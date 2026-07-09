@@ -13,14 +13,14 @@ use tokio_tungstenite::{
         http::{Response as HttpResponse, StatusCode},
     },
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     protocol::{ClientMessage, ServerMessage},
     upstream::Controls,
 };
 
-import!(session);
+import!(dom, session);
 pub type WsWrite = SplitSink<WebSocketStream<TcpStream>, Message>;
 
 /// Constantly accept connections until we're forced to exit.
@@ -84,7 +84,7 @@ async fn handle_connection(
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Some("invalid or missing token".to_string()))
                 .expect("build unauthorized response");
-            return Err(denied)
+            return Err(denied);
         }
 
         Ok(response)
@@ -106,9 +106,13 @@ async fn handle_connection(
         match msg? {
             Message::Binary(bytes) => match ClientMessage::from_bytes(bytes) {
                 Ok(message) => session.handle(message).await?,
-                Err(e) => debug!(%peer, "undecodable binary frame: {e}"),
+                Err(e) => warn!(%peer, "undecodable binary frame: {e}"),
             },
-            Message::Text(text) => debug!(%peer, "text frame: {text}"),
+            // Some executor WebSocket APIs only expose a string-based Send
+            Message::Text(text) => match ClientMessage::from_bytes(text.as_bytes()) {
+                Ok(message) => session.handle(message).await?,
+                Err(e) => warn!(%peer, "undecodable text frame: {e}"),
+            },
             Message::Close(_) => break,
             _ => {}
         }

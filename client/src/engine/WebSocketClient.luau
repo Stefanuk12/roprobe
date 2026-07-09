@@ -11,7 +11,8 @@ export type WebSocketClientData = {
     _trove: Trove.Trove,
     _connection: typeof(WebSocket.connect("")),
 
-    onMessage: Signal.Signal<()>,
+    onMessage: Signal.Signal<string>,
+    onClose: Signal.Signal<()>,
 }
 export type WebSocketClient = setmetatable<WebSocketClientData, typeof(WebSocketClient)>
 
@@ -23,12 +24,14 @@ function WebSocketClient.new(url: string): WebSocketClient
         connection:Close()
     end)
 
-    -- Create and return the object
     local self: WebSocketClientData = {
         _trove = trove,
         _connection = connection,
         onMessage = Signal.new(),
+        onClose = Signal.new(),
     }
+    trove:Add(self.onMessage)
+    trove:Add(self.onClose)
     return setmetatable(self, WebSocketClient)
 end
 
@@ -41,21 +44,27 @@ end
 function WebSocketClient.Initialise(self: WebSocketClient)
     local trove = self._trove
 
-    -- Listen when for when the connection closes and clean up
+    -- Tear down once the socket closes.
     local connection
     connection = self._connection.OnClose:Connect(function()
         if connection then
             connection:Disconnect()
         end
+
+        self.onClose:Fire()
         self:Destroy()
     end)
     trove:Add(connection)
 
-    -- Listen for new messages
-    trove:Add(self._connection.OnMessage:Connect(function(_message: string) end))
+    -- Handle any new messages
+    trove:Add(self._connection.OnMessage:Connect(function(message: string)
+        self.onMessage:Fire(message)
+    end))
 end
 
--- Send a message.
-function WebSocketClient.Send(_self: WebSocketClient) end
+--- Send a message.
+function WebSocketClient.Send(self: WebSocketClient, message: buffer | string)
+    self._connection:Send(if type(message) == "buffer" then buffer.tostring(message) else message)
+end
 
 return WebSocketClient

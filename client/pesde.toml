@@ -32,5 +32,5 @@ trove = { wally = "sleitnick/trove", version = "^1.8.0" }
 signal = { wally = "sleitnick/signal", version = "^2.0.3" }
 
 [dev_dependencies]
-luau_defs = { repo = "rocult/luau-defs", rev = "e628aec6fabb5acfd28f1bc6a18a1c7950122d2c", target = "luau" }
+luau_defs = { repo = "rocult/luau-defs", rev = "d2b15bf4f96365f9bd76c1c85157ce4dd0dee94e", target = "luau" }
 scripts = { name = "pesde/scripts_rojo", version = "^0.2.0", target = "lune" }

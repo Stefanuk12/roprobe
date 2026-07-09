@@ -1,1 +1,1 @@
-import!(client, handshake, server);
+import!(client, dom, handshake, server);

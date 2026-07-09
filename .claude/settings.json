@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd client 2>/dev/null && mise run check-update 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Checking for CLAUDE.md updates…"
+          }
+        ]
+      }
+    ]
+  }
+}
