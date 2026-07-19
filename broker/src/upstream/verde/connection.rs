@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use futures_util::{SinkExt as _, StreamExt as _, stream::FuturesUnordered};
+use futures_util::{
+    FutureExt as _, SinkExt as _, StreamExt as _, future::BoxFuture, stream::FuturesUnordered,
+};
 use tokio::{
     net::TcpStream,
     sync::{broadcast, watch},
@@ -29,6 +31,8 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Coalesce a burst of DOM changes into one `explorer_delta`.
 const FLUSH_DELAY: Duration = Duration::from_millis(100);
 
+type SearchTask = BoxFuture<'static, Outbound>;
+
 /// Why [`Connection::serve`] stopped serving a session.
 pub enum Served {
     /// The active session changed; rebuild for the new one.
@@ -42,8 +46,11 @@ pub struct Connection {
     write: VerdeSink,
     tree: TreeState,
     flush_at: Option<Instant>,
-    ops: FuturesUnordered<OperationTask>,
     security_level: u8,
+
+    // Some tasks can take a while and bottleneck the loop + select! loop, so we use these instead
+    ops: FuturesUnordered<OperationTask>,
+    searches: FuturesUnordered<SearchTask>,
 }
 
 impl Connection {
@@ -52,8 +59,9 @@ impl Connection {
             write,
             tree: TreeState::default(),
             flush_at: None,
-            ops: FuturesUnordered::new(),
             security_level,
+            ops: FuturesUnordered::new(),
+            searches: FuturesUnordered::new(),
         }
     }
 
@@ -134,6 +142,8 @@ impl Connection {
                     self.flush().await?;
                     self.flush_at = None;
                 }
+
+                Some(result) = self.searches.next() => self.send(result).await?,
 
                 // A relayed operation finished: prime verde's tree with each
                 // instance its properties reference so those links reveal on click,
@@ -223,25 +233,8 @@ impl Connection {
             }
 
             Inbound::RequestSearch { query } => {
-                // We need to ask for a full snapshot for search to properly work
-                if let Some(sink) = mirror.dom_sink() {
-                    let before = mirror.with_dom(|d| d.len());
-                    let _ = sink.send(DomRequest::Snapshot(None)).await;
-                    match mirror.wait_population(Duration::from_secs(10), usize::MAX).await {
-                        Some(x) => info!("loaded {} nodes", x.abs_diff(before)),
-                        None => info!("no current session"),
-                    };
-                }
-
-                // Search through our mirror
-                let (nodes, truncated) = mirror.with_dom(|dom| serialize::search(dom, &query));
-                self.send(Outbound::SearchResult {
-                    query,
-                    nodes,
-                    truncated,
-                    partial: false,
-                })
-                .await?;
+                self.searches
+                    .push(Self::run_search(Arc::clone(mirror), query));
             }
 
             Inbound::ReleaseSubtree {
@@ -311,5 +304,30 @@ impl Connection {
     async fn send(&mut self, message: Outbound) -> WsResult {
         let json = serde_json::to_string(&message).expect("serialize verde message");
         self.write.send(Message::Text(json.into())).await
+    }
+
+    fn run_search(mirror: Arc<Mirror>, query: String) -> SearchTask {
+        async move {
+            if let Some(sink) = mirror.dom_sink() {
+                let before = mirror.with_dom(|d| d.len());
+                let _ = sink.send(DomRequest::Snapshot(None)).await;
+                match mirror
+                    .wait_population(Duration::from_secs(10), before)
+                    .await
+                {
+                    Some(x) => info!("loaded {} nodes", x.abs_diff(before)),
+                    None => info!("no current session"),
+                }
+            }
+
+            let (nodes, truncated) = mirror.with_dom(|dom| serialize::search(dom, &query));
+            Outbound::SearchResult {
+                query,
+                nodes,
+                truncated,
+                partial: false,
+            }
+        }
+        .boxed()
     }
 }
