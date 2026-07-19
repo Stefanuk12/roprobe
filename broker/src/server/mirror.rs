@@ -40,8 +40,8 @@ pub enum DomRequest {
 pub struct Mirror {
     dom: Mutex<SessionDom>,
     changes: broadcast::Sender<Arc<DomChange>>,
-    op_sink: Mutex<Option<(u32, mpsc::Sender<OpRequest>)>>,
-    dom_sink: Mutex<Option<(u32, mpsc::Sender<DomRequest>)>>,
+    op_sink: Mutex<Option<mpsc::Sender<OpRequest>>>,
+    dom_sink: Mutex<Option<mpsc::Sender<DomRequest>>>,
     enum_catalog: Mutex<Arc<Vec<EnumFamily>>>,
 }
 
@@ -90,39 +90,39 @@ impl Mirror {
     }
 
     /// Point operation relaying at the now-active client session `owner`.
-    pub fn install_op_sink(&self, owner: u32, sink: mpsc::Sender<OpRequest>) {
-        *self.op_sink.lock().expect("mirror op sink lock") = Some((owner, sink));
+    pub fn install_op_sink(&self, sink: mpsc::Sender<OpRequest>) {
+        *self.op_sink.lock().expect("mirror op sink lock") = Some(sink);
     }
 
     /// Drop the operation sink if `owner` still holds it (a no-op once a successor installed its own), failing pending relays fast.
-    pub fn clear_op_sink(&self, owner: u32) {
+    pub fn clear_op_sink(&self) {
         let mut sink = self.op_sink.lock().expect("mirror op sink lock");
-        if sink.as_ref().is_some_and(|(id, _)| *id == owner) {
+        if sink.as_ref().is_some() {
             *sink = None;
         }
     }
 
     /// A clone of the current session's operation sink, if one is active.
     pub fn op_sink(&self) -> Option<mpsc::Sender<OpRequest>> {
-        self.op_sink.lock().expect("mirror op sink lock").as_ref().map(|(_, sink)| sink.clone())
+        self.op_sink.lock().expect("mirror op sink lock").as_ref().map(|sink| sink.clone())
     }
 
     /// Point lazy dom-population requests at the now-active client session `owner`.
-    pub fn install_dom_sink(&self, owner: u32, sink: mpsc::Sender<DomRequest>) {
-        *self.dom_sink.lock().expect("mirror dom sink lock") = Some((owner, sink));
+    pub fn install_dom_sink(&self, sink: mpsc::Sender<DomRequest>) {
+        *self.dom_sink.lock().expect("mirror dom sink lock") = Some(sink);
     }
 
     /// Drop the dom-request sink if `owner` still holds it, a no-op once a successor installed its own.
-    pub fn clear_dom_sink(&self, owner: u32) {
+    pub fn clear_dom_sink(&self) {
         let mut sink = self.dom_sink.lock().expect("mirror dom sink lock");
-        if sink.as_ref().is_some_and(|(id, _)| *id == owner) {
+        if sink.as_ref().is_some() {
             *sink = None;
         }
     }
 
     /// A clone of the current session's dom-request sink, if one is active.
     pub fn dom_sink(&self) -> Option<mpsc::Sender<DomRequest>> {
-        self.dom_sink.lock().expect("mirror dom sink lock").as_ref().map(|(_, sink)| sink.clone())
+        self.dom_sink.lock().expect("mirror dom sink lock").as_ref().map(|sink| sink.clone())
     }
 
     /// Store the client's enum catalog (sent once on connect).
@@ -151,15 +151,9 @@ mod tests {
         assert!(mirror.dom_sink().is_none(), "no sink before a session installs one");
 
         let (tx, mut rx) = mpsc::channel::<DomRequest>(4);
-        mirror.install_dom_sink(1, tx);
+        mirror.install_dom_sink(tx);
 
         mirror.dom_sink().expect("sink installed").send(DomRequest::Children(None)).await.unwrap();
         assert!(matches!(rx.recv().await, Some(DomRequest::Children(None))));
-
-        // A different owner's clear is ignored; only the holder's takes effect.
-        mirror.clear_dom_sink(2);
-        assert!(mirror.dom_sink().is_some(), "another owner cannot clear the sink");
-        mirror.clear_dom_sink(1);
-        assert!(mirror.dom_sink().is_none(), "the holder clears its own sink");
     }
 }

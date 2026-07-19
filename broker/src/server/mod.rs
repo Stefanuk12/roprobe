@@ -182,8 +182,8 @@ impl Server {
         let (dom_tx, mut dom_rx) = mpsc::channel::<DomRequest>(32);
 
         let mirror = Mirror::new();
-        mirror.install_op_sink(1, op_tx.clone());
-        mirror.install_dom_sink(1, dom_tx.clone());
+        mirror.install_op_sink(op_tx.clone());
+        mirror.install_dom_sink(dom_tx.clone());
 
         // Create and add the session
         let (write, mut read) = ws.split();
