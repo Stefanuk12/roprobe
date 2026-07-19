@@ -26,7 +26,9 @@ use crate::{
     protocol::{ClientMessage, ServerMessage, text_decode},
 };
 
-import!(dom, mirror, session, manager);
+pub mod manager;
+import!(dom, mirror, session);
+
 pub type WsWrite = SplitSink<WebSocketStream<TcpStream>, Message>;
 
 enum ReadNext {
