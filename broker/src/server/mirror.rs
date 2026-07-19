@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -155,6 +155,19 @@ impl Mirror {
             dom.get(id)
                 .map(|instance| (instance.name.clone(), instance.class.to_string()))
         })
+    }
+
+    /// Wait until the mirror updates.
+    pub async fn wait_population(&self, timeout: Duration, threshold: usize) -> Option<usize> {
+        let (mut rx, current_count) = self.subscribe_with(|d| d.len());
+        if current_count > threshold {
+            return Some(current_count);
+        }
+
+        match tokio::time::timeout(timeout, rx.recv()).await {
+            Ok(_) => Some(self.with_dom(|dom| dom.len())),
+            _ => Some(0),
+        }
     }
 }
 

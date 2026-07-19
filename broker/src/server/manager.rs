@@ -158,15 +158,10 @@ impl Sessions {
 
     /// Wait until the current dom has some nodes.
     pub async fn wait_current_dom_populated(&self, timeout: Duration) -> Option<usize> {
-        let (_, mut rx, current_count) = self.subscribe_current_dom(|d| d.len()).await?;
-        if current_count > 0 {
-            return Some(current_count);
-        }
-
-        match time::timeout(timeout, rx.recv()).await {
-            Ok(_) => self.with_dom(|dom| dom.len()).await,
-            _ => Some(0),
-        }
+        let holder = self.holder.read().await;
+        let mirror = holder.current()?.mirror.clone();
+        drop(holder);
+        mirror.wait_population(timeout, 0).await
     }
 }
 

@@ -7,7 +7,7 @@ use tokio::{
     time::{Instant, timeout},
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     server::{DomChange, DomRequest, Mirror},
@@ -158,6 +158,7 @@ impl Connection {
 
     /// Dispatch one decoded inbound verde message.
     async fn handle_inbound(&mut self, mirror: &Arc<Mirror>, inbound: Inbound) -> WsResult {
+        debug!("verde inbound {inbound:?}");
         match inbound {
             // Heartbeat: keep verde's 5s timer alive.
             Inbound::Ack { request_id } => self.send(Outbound::Ack { request_id }).await?,
@@ -222,6 +223,17 @@ impl Connection {
             }
 
             Inbound::RequestSearch { query } => {
+                // We need to ask for a full snapshot for search to properly work
+                if let Some(sink) = mirror.dom_sink() {
+                    let before = mirror.with_dom(|d| d.len());
+                    let _ = sink.send(DomRequest::Snapshot(None)).await;
+                    match mirror.wait_population(Duration::from_secs(10), usize::MAX).await {
+                        Some(x) => info!("loaded {} nodes", x.abs_diff(before)),
+                        None => info!("no current session"),
+                    };
+                }
+
+                // Search through our mirror
                 let (nodes, truncated) = mirror.with_dom(|dom| serialize::search(dom, &query));
                 self.send(Outbound::SearchResult {
                     query,
