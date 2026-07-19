@@ -7,6 +7,7 @@ local squashEnum = require("@lib/squashEnum")
 local values = require("@lib/Messages/values")
 
 -- Primitives
+local boolean = primitives.boolean
 local optStr = primitives.optStr
 local str = primitives.str
 local strArray = primitives.strArray
@@ -30,6 +31,7 @@ local domInstance: Squash.SerDes<DomInstance> = {
         optStr.ser(cursor, instance.parent)
         str.ser(cursor, instance.class)
         str.ser(cursor, instance.name)
+        boolean.ser(cursor, instance.hasChildren)
         properties.ser(cursor, instance.properties)
         properties.ser(cursor, instance.attributes)
         optTags.ser(cursor, instance.tags)
@@ -39,6 +41,7 @@ local domInstance: Squash.SerDes<DomInstance> = {
         local tags = optTags.des(cursor)
         local attributes = properties.des(cursor)
         local props = properties.des(cursor)
+        local hasChildren = boolean.des(cursor)
         local name = str.des(cursor)
         local class = str.des(cursor)
         local parent = optStr.des(cursor)
@@ -48,6 +51,7 @@ local domInstance: Squash.SerDes<DomInstance> = {
             parent = parent,
             class = class,
             name = name,
+            hasChildren = hasChildren,
             properties = props,
             attributes = attributes,
             tags = tags,

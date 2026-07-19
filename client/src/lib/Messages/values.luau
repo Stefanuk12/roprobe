@@ -22,13 +22,18 @@ local u8 = primitives.u8
 type ContentValue = Broker.ContentValue
 type DomValue = Broker.DomValue
 
+-- Build the family stuff
 local NO_FAMILY = 0xffff
 local enumFamilies = Enum:GetEnums()
 local familyIndexByType: { [Enum]: number } = {}
-local familyNames: { string } = {}
+local familyCatalog: { { name: string, items: { { name: string, value: number } } } } = {}
 for index, family in enumFamilies do
     familyIndexByType[family] = index - 1
-    familyNames[index] = tostring(family)
+    local items = {}
+    for _, item in family:GetEnumItems() do
+        table.insert(items, { name = item.Name, value = item.Value })
+    end
+    familyCatalog[index] = { name = tostring(family), items = items }
 end
 
 --- Mirrors `Enum(familyIndex, value)`
@@ -246,5 +251,5 @@ local domValue: Squash.SerDes<DomValue> = squashEnum({
 
 return {
     domValue = domValue,
-    familyNames = familyNames,
+    familyCatalog = familyCatalog,
 }

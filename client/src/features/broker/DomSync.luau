@@ -90,8 +90,7 @@ export type UpdateChanges = {
     removeProperties: { string }?,
     attributes: RawAttributes?,
     removeAttributes: { string }?,
-    --- Replace the stored tag set in full (`{}` clears it).
-    --- Mutually exclusive with `addTags`/`removeTags`.
+    --- Replace the stored tag set in full (`{}` clears it), mutually exclusive with `addTags`/`removeTags`.
     tags: { string }?,
     addTags: { string }?,
     removeTags: { string }?,
@@ -122,8 +121,13 @@ end
 function DomSync._allocateId(self: DomSync, instance: Instance): string
     if gethiddenproperty then
         local ok, uniqueId = pcall(gethiddenproperty, instance, "UniqueId")
+        -- Services (and freshly-created instances) report an all-zero UniqueId;
+        -- those would all collide, so only trust a genuinely unique one.
         if ok and uniqueId ~= nil then
-            return tostring(uniqueId)
+            local id = tostring(uniqueId)
+            if not id:match("^0*$") then
+                return id
+            end
         end
     end
 
@@ -159,6 +163,7 @@ function DomSync._mirror(
         parent = if mirroredParent then self:_mirror(mirroredParent, upserts) else nil,
         class = instance.ClassName,
         name = instance.Name,
+        hasChildren = #instance:GetChildren() > 0,
         properties = {},
         attributes = {},
         tags = nil,
@@ -422,9 +427,7 @@ function DomSync.Nodes(self: DomSync, instances: { Instance }): Messages.DomPatc
     return { upserts = upserts, removals = {}, updates = {} }
 end
 
---- Build a patch that removes an instance's mirrored subtree.
----
---- Returns `nil` if it was never mirrored.
+--- Build a patch that removes an instance's mirrored subtree, or `nil` if it was never mirrored.
 function DomSync.Remove(self: DomSync, instance: Instance): Messages.DomPatch?
     local id = self._ids[instance]
     if not id then

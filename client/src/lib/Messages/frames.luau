@@ -2,6 +2,7 @@
 local Broker = require("@contracts/Broker")
 local Squash = require("@pkgs/squash")
 local dom = require("@lib/Messages/dom")
+local operations = require("@lib/Messages/operations")
 local primitives = require("@lib/Messages/primitives")
 local squashEnum = require("@lib/squashEnum")
 
@@ -10,12 +11,20 @@ local boolean = primitives.boolean
 local optStr = primitives.optStr
 local str = primitives.str
 local strArray = primitives.strArray
+local u32 = primitives.u32
 
 -- Dom
 local domPatch = dom.domPatch
 
+-- Operations
+local enumFamilies = operations.enumFamilies
+local operation = operations.operation
+local opResult = operations.opResult
+
 -- Types
 type ClientMessage = Broker.ClientMessage
+type OperationRequest = Broker.OperationRequest
+type OperationResponse = Broker.OperationResponse
 type ServerMessage = Broker.ServerMessage
 type Upstream = Broker.Upstream
 type UpstreamState = Broker.UpstreamState
@@ -36,13 +45,43 @@ local upstreamState: Squash.SerDes<UpstreamState> = {
     end,
 }
 
+--- Mirrors `ServerMessage::Operation`'s `{ id, op }` payload.
+local operationRequest: Squash.SerDes<OperationRequest> = {
+    ser = function(cursor, value)
+        operation.ser(cursor, value.op)
+        u32.ser(cursor, value.id)
+    end,
+
+    des = function(cursor)
+        local id = u32.des(cursor)
+        local op = operation.des(cursor)
+        return { id = id, op = op }
+    end,
+}
+
+--- Mirrors `ClientMessage::OperationResult`'s `{ id, result }` payload.
+local operationResponse: Squash.SerDes<OperationResponse> = {
+    ser = function(cursor, value)
+        opResult.ser(cursor, value.result)
+        u32.ser(cursor, value.id)
+    end,
+
+    des = function(cursor)
+        local id = u32.des(cursor)
+        local result = opResult.des(cursor)
+        return { id = id, result = result }
+    end,
+}
+
 --- Mirrors `ClientMessage`.
 local clientMessage: Squash.SerDes<ClientMessage> = squashEnum({
     { type = "Shutdown" :: "Shutdown" } :: any,
     { type = "SetUpstream" :: "SetUpstream", content = Squash.T(upstreamState) },
     { type = "UpdateDom" :: "UpdateDom", content = Squash.T(domPatch) },
-    { type = "EnumFamilies" :: "EnumFamilies", content = Squash.T(strArray) },
-}) :: any
+    { type = "EnumFamilies" :: "EnumFamilies", content = Squash.T(enumFamilies) },
+    { type = "OperationResult" :: "OperationResult", content = Squash.T(operationResponse) },
+    { type = "RequestActive" :: "RequestActive" } :: any,
+})
 
 --- Mirrors `Search`'s `{ from, query }` payload.
 local searchQuery: Squash.SerDes<{ from: string, query: string }> = {
@@ -67,7 +106,8 @@ local serverMessage: Squash.SerDes<ServerMessage> = squashEnum({
     { type = "RequestSnapshot" :: "RequestSnapshot", content = Squash.T(optStr) },
     { type = "Search" :: "Search", content = Squash.T(searchQuery) },
     { type = "RequestNodes" :: "RequestNodes", content = Squash.T(strArray) },
-}) :: any
+    { type = "Operation" :: "Operation", content = Squash.T(operationRequest) },
+})
 
 return {
     upstream = upstream,

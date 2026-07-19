@@ -3,13 +3,14 @@ local DomSync = require("@features/broker/DomSync")
 local DomWatch = require("@features/broker/DomWatch")
 local Logger = require("@engine/Logger")
 local Messages = require("@lib/Messages")
+local Operations = require("@features/broker/operations")
 local Trove = require("@pkgs/trove")
 local WebSocketClient = require("@engine/WebSocketClient")
 
 -- Services
 local HttpService = cloneref(game:GetService("HttpService"))
 
---- Stores port + auth token here.1
+--- Default path to the broker handshake lockfile (port + auth token).
 local DEFAULT_LOCKFILE = "roprobe/broker.json"
 
 --- Manages the single link to the broker via WebSocket.
@@ -82,8 +83,7 @@ local function resolveEndpoint(config: Config): (string?, number?, string?)
     return nil, nil, nil
 end
 
---- Create a new [`Broker`] object.
---- Nothing connects until [`Broker.Start`].
+--- Create a new [`Broker`] object; nothing connects until [`Broker.Start`].
 function Broker.new(config: Config?): Broker
     local resolved: Config = config or {}
 
@@ -173,8 +173,7 @@ function Broker._attempt(self: Broker)
     Logger:Info("broker", `connecting to {url}`)
 end
 
---- Decode and dispatch one frame from the broker. Unknown / malformed frames
---- (e.g. from a newer broker) are logged and dropped rather than fatal.
+--- Decode and dispatch one frame from the broker, logging and dropping unknown or malformed frames rather than treating them as fatal.
 function Broker._onMessage(self: Broker, frame: string)
     local ok, message = pcall(Messages.decode, frame)
     if not ok then
@@ -182,6 +181,16 @@ function Broker._onMessage(self: Broker, frame: string)
         return
     end
 
+    -- A throw handling one frame must not escape into the socket callback and
+    -- tear the connection down; log it and keep the link alive.
+    local handled, err = pcall(self._dispatch, self, message)
+    if not handled then
+        Logger:Warn("broker", `handling {message.type} failed: {err}`)
+    end
+end
+
+--- Route one decoded [`Messages.ServerMessage`] to its handler.
+function Broker._dispatch(self: Broker, message: Messages.ServerMessage)
     if message.type == "Hello" then
         self:_onHello()
     elseif message.type == "UpstreamChanged" then
@@ -198,7 +207,15 @@ function Broker._onMessage(self: Broker, frame: string)
         self:_onSearch(message.content)
     elseif message.type == "RequestNodes" then
         self:_onRequestNodes(message.content)
+    elseif message.type == "Operation" then
+        self:_onOperation(message.content)
     end
+end
+
+--- Perform an operation like changing Dom / running code
+function Broker._onOperation(self: Broker, content: Messages.OperationRequest)
+    local result = Operations.dispatch({ sync = self._sync, watch = self._watch }, content.op)
+    self:_send({ type = "OperationResult" :: "OperationResult", content = { id = content.id, result = result } })
 end
 
 --- Mirror a node's children.
@@ -322,6 +339,14 @@ function Broker.SetUpstream(self: Broker, upstream: Upstream, enabled: boolean)
     self._upstreams[upstream] = enabled
     if self.isConnected then
         self:_send({ type = "SetUpstream" :: "SetUpstream", content = { upstream = upstream, enabled = enabled } })
+    end
+end
+
+--- Ask the broker to make this client the active (synced) session, taking the
+--- slot from whichever client currently holds it.
+function Broker.RequestActive(self: Broker)
+    if self.isConnected then
+        self:_send({ type = "RequestActive" :: "RequestActive" })
     end
 end
 

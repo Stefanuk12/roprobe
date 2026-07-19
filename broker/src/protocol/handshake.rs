@@ -3,15 +3,14 @@ use std::fmt::Write as _;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize)]
 pub struct Handshake {
     pub port: u16,
     pub token: String,
 }
 
 impl Handshake {
-    /// Mint a handshake for `port` with a fresh 256-bit hex auth token.
-    /// Hex avoids URL-encoding concerns when the extension passes the token back as a `?token=` query parameter.
+    /// Mint a handshake for `port` with a fresh 256-bit hex auth token (hex avoids URL-encoding concerns when the extension passes it back as a `?token=` query parameter).
     pub fn generate(port: u16) -> Self {
         let mut bytes = [0u8; 32];
         let mut rng = rand::rng();

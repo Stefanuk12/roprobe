@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::upstream::Upstream;
+use crate::{server::SessionId, upstream::Upstream};
 
-use super::DomPatch;
+use super::{DomPatch, EnumFamily, OpResult};
 
 /// Contains all the possible inbound events from a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,9 +14,18 @@ pub enum ClientMessage {
     SetUpstream { upstream: Upstream, enabled: bool },
     /// Apply an incremental DOM patch to the session's mirror.
     UpdateDom(DomPatch),
-    /// The client's `Enum:GetEnums()` table, sent once on connect so the broker
-    /// can resolve `DomValue::Enum` family indices back to Roblox family names.
-    EnumFamilies(Vec<String>),
+    /// The client's `Enum:GetEnums()` catalog (each family with its items), sent
+    /// once on connect so the broker can resolve `DomValue::Enum` family indices
+    /// back to Roblox family names and enum options.
+    EnumFamilies(Vec<EnumFamily>),
+    /// The result of applying a relayed [`super::ServerMessage::Operation`].
+    OperationResult { id: u32, result: OpResult },
+    /// Ask the broker to make *this* client the active (forwarded) session.
+    RequestActive,
+    /// Control-only: make the session with the given id active (sent by the `swap` command, not the Luau client).
+    SwapActive(SessionId),
+    /// Control-only: ask for the connected-session list (sent by the `sessions` command), answered with a [`super::ServerMessage::Sessions`].
+    ListSessions,
 }
 
 impl ClientMessage {
@@ -36,6 +45,10 @@ impl ClientMessage {
             ClientMessage::SetUpstream { .. } => "set-upstream",
             ClientMessage::UpdateDom(..) => "update-dom",
             ClientMessage::EnumFamilies(..) => "enum-families",
+            ClientMessage::OperationResult { .. } => "operation-result",
+            ClientMessage::RequestActive => "request-active",
+            ClientMessage::SwapActive(..) => "swap-active",
+            ClientMessage::ListSessions => "list-sessions",
         }
     }
 }
@@ -71,6 +84,15 @@ mod tests {
     }
 
     #[test]
+    fn request_active_is_a_pinned_single_tag_byte() {
+        // The Luau client mirrors this tag (frames.luau `clientMessage`); keep it
+        // pinned so a reorder can't silently break the takeover message.
+        let bytes = ClientMessage::RequestActive.to_bytes().unwrap();
+        assert_eq!(bytes, [0x05]);
+        assert!(matches!(ClientMessage::from_bytes(bytes).unwrap(), ClientMessage::RequestActive));
+    }
+
+    #[test]
     fn set_upstream_round_trips() {
         let msg = ClientMessage::SetUpstream {
             upstream: Upstream::Verde,
@@ -89,13 +111,42 @@ mod tests {
 
     #[test]
     fn enum_families_round_trips_and_is_pinned() {
-        let msg = ClientMessage::EnumFamilies(vec!["A".into(), "B".into()]);
-        // Vec elements reversed (B before A), VLQ count, then the tag byte 3.
-        assert_eq!(msg.to_bytes().unwrap(), vec![b'B', 1, b'A', 1, 2, 3]);
+        use crate::protocol::{EnumEntry, EnumFamily};
+
+        let msg = ClientMessage::EnumFamilies(vec![EnumFamily {
+            name: "A".into(),
+            items: vec![EnumEntry { name: "X".into(), value: 1 }],
+        }]);
+        // One family (plain struct: name then items forward), items a Vec of one EnumEntry (name then value forward), then family VLQ count and tag 3.
+        #[rustfmt::skip]
+        let expected = vec![
+            b'A', 1,            // family.name
+            b'X', 1,            // items[0].name
+            1, 0, 0, 0,         // items[0].value (u32 LE)
+            1,                  // items VLQ count
+            1,                  // families VLQ count
+            3,                  // ClientMessage tag (EnumFamilies)
+        ];
+        assert_eq!(msg.to_bytes().unwrap(), expected);
         let ClientMessage::EnumFamilies(families) = ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap() else {
             panic!("decoded a different variant");
         };
-        assert_eq!(families, vec!["A".to_string(), "B".to_string()]);
+        assert_eq!(families[0].name, "A");
+        assert_eq!(families[0].items, vec![EnumEntry { name: "X".to_string(), value: 1 }]);
+    }
+
+    /// Pins [`ClientMessage::OperationResult`]: a struct variant (fields reversed — `result` before `id`), tag 4 last, with the `result` payload a typed [`OpResult`] mirrored by hand in the Luau codec.
+    #[test]
+    fn operation_result_round_trips_and_is_pinned() {
+        let msg = ClientMessage::OperationResult { id: 1, result: OpResult::Ok };
+        // OpResult::Ok is a bare unit variant: just its tag byte 0, then id 1
+        // (u32 LE), then ClientMessage tag 4.
+        assert_eq!(msg.to_bytes().unwrap(), vec![0, 1, 0, 0, 0, 4]);
+        let ClientMessage::OperationResult { id, result } = ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap()
+        else {
+            panic!("decoded a different variant");
+        };
+        assert_eq!((id, result), (1, OpResult::Ok));
     }
 
     #[test]
@@ -107,6 +158,7 @@ mod tests {
                     parent: None,
                     class: "Folder".into(),
                     name: "Stuff".into(),
+                    has_children: true,
                     properties: HashMap::new(),
                     attributes: HashMap::new(),
                     tags: None,
@@ -116,6 +168,7 @@ mod tests {
                     parent: Some("a1".into()),
                     class: "Part".into(),
                     name: "Brick".into(),
+                    has_children: false,
                     properties: HashMap::from([("Anchored".to_string(), DomValue::Bool(true))]),
                     attributes: HashMap::from([("Health".to_string(), DomValue::Float(50.0))]),
                     tags: Some(vec!["Enemy".into()]),
@@ -125,6 +178,7 @@ mod tests {
                     parent: Some("a1".into()),
                     class: "ObjectValue".into(),
                     name: "Pointer".into(),
+                    has_children: false,
                     properties: HashMap::from([("Value".to_string(), DomValue::Ref("b2".into()))]),
                     attributes: HashMap::new(),
                     tags: None,
@@ -140,6 +194,8 @@ mod tests {
         };
         assert_eq!(patch.upserts.len(), 3);
         assert_eq!(patch.upserts[0].id, "a1");
+        assert_eq!(patch.upserts[0].has_children, true);
+        assert_eq!(patch.upserts[1].has_children, false);
         assert_eq!(patch.upserts[0].tags, None);
         assert_eq!(patch.upserts[1].parent.as_deref(), Some("a1"));
         assert_eq!(patch.upserts[1].properties.get("Anchored"), Some(&DomValue::Bool(true)));
@@ -149,9 +205,7 @@ mod tests {
         assert_eq!(patch.removals, vec!["c3".to_string()]);
     }
 
-    /// Pins the wire layout the Luau client mirrors
-    /// (`client/src/lib/Messages.luau`).
-    /// If this breaks, the client encoder must change with it.
+    /// Pins the wire layout the Luau client mirrors (`client/src/lib/Messages.luau`), which must change with it if this breaks.
     #[test]
     fn update_dom_wire_layout_is_pinned() {
         let msg = ClientMessage::UpdateDom(DomPatch {
@@ -161,6 +215,7 @@ mod tests {
                     parent: Some("p".into()),
                     class: "C".into(),
                     name: "N".into(),
+                    has_children: true,
                     properties: HashMap::from([("K".to_string(), DomValue::Int(7))]),
                     attributes: HashMap::from([("A".to_string(), DomValue::Bool(true))]),
                     tags: Some(vec!["t".into()]),
@@ -170,6 +225,7 @@ mod tests {
                     parent: None,
                     class: "D".into(),
                     name: "M".into(),
+                    has_children: false,
                     properties: HashMap::new(),
                     attributes: HashMap::new(),
                     tags: None,
@@ -187,6 +243,7 @@ mod tests {
             0,                  // parent: None -> 0x00 flag only
             b'D', 1,            // class
             b'M', 1,            // name
+            0,                  // has_children: false
             0,                  // properties: empty map count
             0,                  // attributes: empty map count
             0,                  // tags: None -> 0x00 flag only
@@ -195,6 +252,7 @@ mod tests {
             b'p', 1, 1,         // parent: Some -> payload + 0x01 flag
             b'C', 1,            // class
             b'N', 1,            // name
+            1,                  // has_children: true
             // properties: per entry value first then key, VLQ count last
             7, 0, 0, 0, 0, 0, 0, 0, // DomValue::Int payload (i64 LE)
             2,                  // DomValue tag (Bool=0, Float=1, Int=2, String=3, Ref=4)
@@ -219,14 +277,11 @@ mod tests {
         ];
         assert_eq!(msg.to_bytes().unwrap(), expected);
 
-        // DomValue::Ref pinned on its own: payload string then tag byte 4.
-        // The Luau encoder in `Messages.luau` reproduces this frame by hand.
+        // DomValue::Ref pinned on its own: payload string then tag byte 4, reproduced by hand in the Luau `Messages.luau` encoder.
         assert_eq!(squash::serde_serialize(&DomValue::Ref("9".into())).unwrap(), vec![b'9', 1, 4]);
     }
 
-    /// Pins a [`DomUpdate`]'s wire layout, including the key-removal encoding
-    /// (`None` values) and the tag-delta variant. Mirrored by the Luau
-    /// `dom-update` check.
+    /// Pins a [`DomUpdate`]'s wire layout — the key-removal encoding (`None` values) and the tag-delta variant — mirrored by the Luau `dom-update` check.
     #[test]
     fn dom_update_wire_layout_is_pinned() {
         let update = DomUpdate {
@@ -271,9 +326,7 @@ mod tests {
         assert_eq!(squash::serde_serialize(&TagChange::Replace(vec!["t".into()])).unwrap(), vec![b't', 1, 1, 1]);
     }
 
-    /// Pins every `DomValue` variant's frame: tuple-variant fields land on the
-    /// wire *reversed* (last field first), tag byte last. The Luau encoder in
-    /// `Messages.luau` must reproduce this catalog by hand — keep the two in sync.
+    /// Pins every `DomValue` variant's frame (tuple-variant fields land on the wire *reversed*, last field first, tag byte last), which the Luau `Messages.luau` encoder must reproduce by hand.
     #[test]
     fn dom_value_wire_frames_are_pinned() {
         fn le(fields: &[f32], tag: u8) -> Vec<u8> {
@@ -328,8 +381,7 @@ mod tests {
         assert_eq!(squash::serde_deserialize::<DomValue>(&mut bytes).unwrap(), udim2);
     }
 
-    /// Same contract as `dom_value_wire_frames_are_pinned`, for the variants
-    /// past `CFrame` (tags 15..). Mirrored by hand in `Messages.luau`.
+    /// Same contract as `dom_value_wire_frames_are_pinned`, for the variants past `CFrame` (tags 15..), mirrored by hand in `Messages.luau`.
     #[test]
     fn extended_dom_value_wire_frames_are_pinned() {
         fn f32s(fields: &[f32]) -> Vec<u8> {
@@ -359,9 +411,7 @@ mod tests {
                 DomValue::Ray(1.0, 2.0, 3.0, 0.0, 1.0, 0.0),
                 [f32s(&[1.0, 2.0, 3.0, 0.0, 1.0, 0.0]), vec![22]].concat(),
             ),
-            // Region3 rides squash's center+size codec: size (z,y,x) then
-            // position (z,y,x), forward. min (-1,-2,-3)/max (1,2,3) => center
-            // (0,0,0), size (2,4,6).
+            // Region3 rides squash's center+size codec: size (z,y,x) then position (z,y,x), forward; min (-1,-2,-3)/max (1,2,3) => center (0,0,0), size (2,4,6).
             (
                 DomValue::Region3(WireRegion3 {
                     size: WireVector3::new(2.0, 4.0, 6.0),
@@ -373,9 +423,7 @@ mod tests {
                 DomValue::Region3int16(-1, -2, -3, 1, 2, 3),
                 [i16s(&[-1, -2, -3, 1, 2, 3]), vec![24]].concat(),
             ),
-            // Axes rides squash's u16 codec. X+Z, with Roblox's coupled faces
-            // (Left/Right from X, Back/Front from Z): back+front+left+right =
-            // 0x1d low byte, x+z = 0x05 high byte.
+            // Axes rides squash's u16 codec (X+Z, with Roblox's coupled faces — Left/Right from X, Back/Front from Z): back+front+left+right = 0x1d low byte, x+z = 0x05 high byte.
             (
                 DomValue::Axes(WireAxes {
                     x: true,
@@ -433,9 +481,7 @@ mod tests {
                 DomValue::OptionalCFrame(Some(identity_at_origin)),
                 [f32s(&identity_at_origin), vec![1, 31]].concat(),
             ),
-            // Content nests its own enum: payload + inner tag, then outer tag.
-            // Uri's source is optional (Option<String>): Some adds a 0x01 flag
-            // after the string, None collapses to a lone 0x00.
+            // Content nests its own enum (payload + inner tag, then outer tag), and Uri's source is optional: Some adds a 0x01 flag after the string, None collapses to a lone 0x00.
             (DomValue::Content(ContentValue::None), vec![0, 32]),
             (DomValue::Content(ContentValue::Uri(Some("u".into()))), vec![b'u', 1, 1, 1, 32]),
             (DomValue::Content(ContentValue::Uri(None)), vec![0, 1, 32]),

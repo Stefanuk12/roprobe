@@ -20,6 +20,10 @@ export type DomInstance = Broker.DomInstance
 export type TagChange = Broker.TagChange
 export type DomUpdate = Broker.DomUpdate
 export type DomPatch = Broker.DomPatch
+export type Operation = Broker.Operation
+export type OpResult = Broker.OpResult
+export type OperationRequest = Broker.OperationRequest
+export type OperationResponse = Broker.OperationResponse
 export type ClientMessage = Broker.ClientMessage
 export type ServerMessage = Broker.ServerMessage
 
@@ -35,7 +39,7 @@ Messages.domUpdate = dom.domUpdate
 Messages.domPatch = dom.domPatch
 Messages.clientMessage = clientMessage
 Messages.serverMessage = serverMessage
-Messages.enumFamilies = values.familyNames
+Messages.enumFamilies = values.familyCatalog
 
 -- Tag introspection
 Messages.tagOf = tags.tagOf
@@ -45,18 +49,22 @@ Messages.knownTag = tags.knownTag
 Messages.contentMatchesTag = tags.contentMatchesTag
 Messages.value = tags.value
 
---- Encode a [`ClientMessage`] into a binary frame for the broker.
-function Messages.encode(message: ClientMessage): buffer
+--- Encode a [`ClientMessage`] into a base64 text frame (text not binary since the executor's socket rejects binary), mirroring the broker's `protocol::transport`.
+function Messages.encode(message: ClientMessage): string
     local cursor = Squash.cursor(256)
     clientMessage.ser(cursor, message)
-    return Squash.tobuffer(cursor)
+    return crypt.base64encode(buffer.tostring(Squash.tobuffer(cursor)))
 end
 
---- Decode a binary frame from the broker.
---- Throws on malformed/unknown frames, so callers on untrusted data should `pcall`.
+--- Decode a base64 text frame from the broker, throwing on malformed/unknown frames (callers on untrusted data should `pcall`).
 function Messages.decode(frame: buffer | string): ServerMessage
-    local buf = if type(frame) == "string" then buffer.fromstring(frame) else frame
-    return serverMessage.des(Squash.frombuffer(buf))
+    local base64: string
+    if type(frame) == "string" then
+        base64 = frame
+    else
+        base64 = buffer.tostring(frame)
+    end
+    return serverMessage.des(Squash.frombuffer(buffer.fromstring(crypt.base64decode(base64))))
 end
 
 return Messages

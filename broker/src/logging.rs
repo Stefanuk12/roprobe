@@ -2,7 +2,7 @@ use std::io::IsTerminal as _;
 
 use tracing_subscriber::{EnvFilter, fmt};
 
-/// Initialsies the console logger.
+/// Initialises the console logger.
 pub fn init(verbose: u8) {
     let default_level = match verbose {
         0 => "info",

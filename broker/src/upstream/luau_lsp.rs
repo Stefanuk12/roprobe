@@ -1,13 +1,15 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use tokio::{net::TcpStream, sync::watch};
 use tracing::{info, warn};
+
+use crate::server::Mirror;
 
 pub const DEFAULT_PORT: u16 = 3667;
 const PROBE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Run the probe loop while the switch is on.
-pub async fn maintain(port: u16, mut enabled: watch::Receiver<bool>) {
+pub async fn maintain(port: u16, mut enabled: watch::Receiver<bool>, _mirror: Arc<Mirror>) {
     loop {
         if !*enabled.borrow_and_update() {
             info!("luau-lsp probing paused");

@@ -3,12 +3,12 @@ local Broker = require("@features/broker")
 local globalTrove = require("@engine/globalTrove")
 
 -- Vars
--- The broker owns the upstream (Verde / luau-lsp) connections; this client only
--- links to it, mirrors the DataModel and says which upstreams it wants on.
--- Host/port/token come from `getgenv().roprobe_config` (or the broker lockfile).
+-- The broker owns the upstream (Verde / luau-lsp) connections; this client just links in, mirrors the DataModel and selects which upstreams to enable.
 local config: Broker.Config = {
+    host = "192.168.0.11",
     verde = true,
     luauLsp = false,
+    lazy = true,
 }
 
 -- Connect to the broker and start streaming the tree.

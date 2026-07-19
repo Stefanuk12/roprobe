@@ -3,7 +3,7 @@
 pub mod luau_lsp;
 pub mod verde;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -16,33 +16,30 @@ pub enum Upstream {
 }
 
 /// The switch states as set by flags/clients, before considering sessions.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
 struct Wanted {
     sessions: usize,
     verde: bool,
     luau_lsp: bool,
 }
 
-/// Runtime switches for the upstream connection tasks.
-///
-/// An upstream task only runs while its switch is on AND at least one
-/// client session is active — there's no point holding connections
-/// that nobody is brokering for.
+/// Runtime switches for the upstream connection tasks, each running only while its switch is on and at least one client session is active.
+#[derive(Clone, Debug, Default)]
 pub struct Controls {
-    wanted: Mutex<Wanted>,
+    wanted: Arc<Mutex<Wanted>>,
     verde: watch::Sender<bool>,
     luau_lsp: watch::Sender<bool>,
 }
 
 impl Controls {
-    /// Create the switches with their starting states.
-    /// Both start inactive: no client sessions exist yet.
+    /// Create the switches with their starting states (both inactive, since no client sessions exist yet).
     pub fn new(verde: bool, luau_lsp: bool) -> Self {
         Self {
-            wanted: Mutex::new(Wanted {
+            wanted: Arc::new(Mutex::new(Wanted {
                 sessions: 0,
                 verde,
                 luau_lsp,
-            }),
+            })),
             verde: watch::channel(false).0,
             luau_lsp: watch::channel(false).0,
         }
@@ -56,9 +53,7 @@ impl Controls {
         }
     }
 
-    /// Enable or disable an upstream. Its task reacts immediately:
-    /// disabling drops any live connection, enabling resumes retrying
-    /// (once a client session is active).
+    /// Enable or disable an upstream, whose task reacts immediately — disabling drops any live connection, enabling resumes retrying once a client session is active.
     pub fn set(&self, upstream: Upstream, enabled: bool) {
         let mut wanted = self.wanted.lock().expect("controls lock");
         match upstream {

@@ -1,11 +1,13 @@
 use std::{io, process::Command, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::connect_async;
 use tracing::{info, warn};
 
 use crate::{
-    Error, StopArgs, commands::CommandResult, lockfile::Lockfile, protocol::ClientMessage,
+    Error, StopArgs,
+    commands::{CommandResult, connect_broker},
+    lockfile::Lockfile,
+    protocol::ClientMessage,
 };
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
@@ -21,17 +23,8 @@ pub async fn stop(args: StopArgs) -> CommandResult {
         return Ok(());
     }
 
-    // Try to connect to the server
-    let port = lockfile.handshake.port;
-    let url = format!("ws://127.0.0.1:{port}/?token={}", lockfile.handshake.token);
-    let (mut ws, _) = connect_async(url.as_str()).await.map_err(|e| {
-        io::Error::other(format!(
-            "could not reach broker on port {port} ({e}); use `--force` to kill pid {}",
-            lockfile.pid
-        ))
-    })?;
-
-    // ... and request a shutdown
+    // Try to connect to the server and request a shutdown
+    let mut ws = connect_broker().await?;
     ws.send(ClientMessage::Shutdown.try_into()?)
         .await
         .map_err(io::Error::other)?;

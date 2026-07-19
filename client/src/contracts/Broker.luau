@@ -54,6 +54,8 @@ export type DomInstance = {
     parent: DomId?,
     class: string,
     name: string,
+    --- Whether the live instance has children, even if none are mirrored yet.
+    hasChildren: boolean,
     properties: { [string]: DomValue },
     attributes: { [string]: DomValue },
     tags: { string }?,
@@ -77,11 +79,41 @@ export type DomPatch = {
     updates: { DomUpdate },
 }
 
+export type Operation =
+    | squashEnum.EnumVariant<"Rename", { node: DomId, name: string }>
+    | squashEnum.EnumVariant<"Delete", { node: DomId }>
+    | squashEnum.EnumVariant<"Move", { node: DomId, parent: DomId? }>
+    | squashEnum.EnumVariant<"Create", { parent: DomId, class: string }>
+    | squashEnum.EnumVariant<"AddTag", { node: DomId, tag: string }>
+    | squashEnum.EnumVariant<"RemoveTag", { node: DomId, tag: string }>
+    | squashEnum.EnumVariant<"SetProperty", { node: DomId, name: string, value: DomValue }>
+    | squashEnum.EnumVariant<"SetAttribute", { node: DomId, name: string, value: DomValue }>
+    | squashEnum.EnumVariant<"RemoveAttribute", { node: DomId, name: string }>
+    | squashEnum.EnumVariant<"RenameAttribute", { node: DomId, old: string, new: string }>
+    | squashEnum.EnumVariant<"GetProperties", { node: DomId, properties: { string } }>
+    | squashEnum.EnumVariant<"RunCode", { source: string }>
+
+export type NamedValue = { name: string, value: DomValue }
+export type Reads = { properties: { NamedValue }, tags: { string }, attributes: { NamedValue } }
+export type OpResult =
+    | squashEnum.EnumVariant<"Ok">
+    | squashEnum.EnumVariant<"Reads", Reads>
+    | squashEnum.EnumVariant<"Err", string>
+    | squashEnum.EnumVariant<"Output", string>
+
+export type EnumEntry = { name: string, value: number }
+export type EnumFamily = { name: string, items: { EnumEntry } }
+
+export type OperationRequest = { id: number, op: Operation }
+export type OperationResponse = { id: number, result: OpResult }
 export type ClientMessage =
     | squashEnum.EnumVariant<"Shutdown">
     | squashEnum.EnumVariant<"SetUpstream", UpstreamState>
     | squashEnum.EnumVariant<"UpdateDom", DomPatch>
-    | squashEnum.EnumVariant<"EnumFamilies", { string }>
+    | squashEnum.EnumVariant<"EnumFamilies", { EnumFamily }>
+    | squashEnum.EnumVariant<"OperationResult", OperationResponse>
+    --- Ask the broker to make this client the active (forwarded) session.
+    | squashEnum.EnumVariant<"RequestActive">
 export type SearchQuery = { from: DomId, query: string }
 export type ServerMessage =
     | squashEnum.EnumVariant<"Hello">
@@ -91,6 +123,6 @@ export type ServerMessage =
     | squashEnum.EnumVariant<"RequestSnapshot", DomId?>
     | squashEnum.EnumVariant<"Search", SearchQuery>
     | squashEnum.EnumVariant<"RequestNodes", { DomId }>
+    | squashEnum.EnumVariant<"Operation", OperationRequest>
 
--- Type-only module; darklua requires a runtime return value.
 return true

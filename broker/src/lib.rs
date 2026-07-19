@@ -7,7 +7,7 @@ macro_rules! import {
     };
 }
 
-import!(cli, error);
+import!(cli, context, error);
 
 pub mod commands;
 mod lockfile;

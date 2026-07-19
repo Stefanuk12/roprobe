@@ -61,8 +61,7 @@ type SquashTuple =
 
 --- Stores tuples within an array, reserving the declaration order.
 ---
---- To do that, values can only be built with `pack` and read with `unpack`.
---- Mixed types are supported.
+--- To do that, values can only be built with `pack` and read with `unpack` (mixed types supported).
 ---
 --- # Example
 ---

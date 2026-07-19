@@ -11,6 +11,8 @@ pub struct DomInstance {
     pub parent: Option<DomId>,
     pub class: String,
     pub name: String,
+    /// Whether the *live* instance has any children (independent of whether they are mirrored yet), letting a tree viewer show an expand arrow and trigger a lazy `RequestChildren` for an unloaded node.
+    pub has_children: bool,
     pub properties: HashMap<String, DomValue>,
     pub attributes: HashMap<String, DomValue>,
     pub tags: Option<Vec<String>>,

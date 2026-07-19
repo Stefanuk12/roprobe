@@ -54,12 +54,16 @@ function WebSocketClient.Initialise(self: WebSocketClient)
         self.onClose:Fire()
         self:Destroy()
     end)
-    trove:Add(connection)
+    -- Executor sockets return non-`RBXScriptConnection`s Trove can't classify, so name the cleanup.
+    trove:Add(connection, "Disconnect")
 
     -- Handle any new messages
-    trove:Add(self._connection.OnMessage:Connect(function(message: string)
-        self.onMessage:Fire(message)
-    end))
+    trove:Add(
+        self._connection.OnMessage:Connect(function(message: string)
+            self.onMessage:Fire(message)
+        end),
+        "Disconnect"
+    )
 end
 
 --- Send a message.

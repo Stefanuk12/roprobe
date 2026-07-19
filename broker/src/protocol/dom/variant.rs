@@ -13,7 +13,7 @@ use squash::roblox::{
 use super::{DomBytes, DomId};
 
 /// A mirror of `rbx_types::ContentType`, specialised for binary format.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum ContentValue {
     None,
     Uri(Option<String>),
@@ -21,7 +21,7 @@ pub enum ContentValue {
 }
 
 /// A subet of `rbx_types::Variant`, specialised for binary format.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, PartialOrd, Debug, Serialize, Deserialize)]
 pub enum DomValue {
     Bool(bool),
     Float(f64),
@@ -202,10 +202,7 @@ impl DomValue {
 mod tests {
     use super::*;
 
-    /// `GetComponents()` hands the rotation over row-major, and `Matrix3`'s
-    /// `x`/`y`/`z` vectors are the matrix *rows*: rbx_xml's `<CFrame>` codec
-    /// writes `orientation.x` out as `R00, R01, R02`. This pins the mapping so
-    /// a refactor can't silently transpose it.
+    /// `GetComponents()` hands the rotation over row-major and `Matrix3`'s `x`/`y`/`z` vectors are the matrix *rows* (rbx_xml's `<CFrame>` codec writes `orientation.x` out as `R00, R01, R02`), pinned here so a refactor can't silently transpose it.
     #[test]
     fn cframe_components_map_to_rows() {
         let value = DomValue::CFrame([10.0, 20.0, 30.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);

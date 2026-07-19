@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::Handshake;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize)]
 pub struct Lockfile {
     #[serde(flatten)]
     pub handshake: Handshake,
@@ -54,5 +54,11 @@ impl From<Handshake> for Lockfile {
             handshake,
             pid: process::id(),
         }
+    }
+}
+
+impl Drop for Lockfile {
+    fn drop(&mut self) {
+        self.remove();
     }
 }

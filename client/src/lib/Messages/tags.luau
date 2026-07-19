@@ -36,12 +36,7 @@ local VALUE_TAGS: { [string]: string } = {
     Content = "Content",
 }
 
---- The `DomValue.type` -> expected `typeof(content)` mapping.
---- Exceptions: `Enum` also takes a raw number;
--- `Int`/`Float32`/`Int32` share `number`;
---- `BinaryString` also takes a string;
---- `PhysicalProperties`/`OptionalCFrame` take nil (None);
---- `Content` takes a [`ContentValue`] table.
+--- The `DomValue.type` -> expected `typeof(content)` mapping, with per-tag exceptions (`Enum` raw number, `Int`/`Float32`/`Int32` share `number`, `BinaryString` string, `PhysicalProperties`/`OptionalCFrame` nil, `Content` a [`ContentValue`] table).
 local CONTENT_TYPEOF: { [string]: string } = {
     Bool = "boolean",
     Float = "number",
@@ -78,8 +73,7 @@ local CONTENT_TYPEOF: { [string]: string } = {
     Content = "Content",
 }
 
---- `DomValue.type` tags legal as Roblox *attribute* types.
---- Only `Float` (attributes store doubles); not objects, enums, or width/serialization-internal tags.
+--- `DomValue.type` tags legal as Roblox *attribute* types (only `Float` since attributes store doubles, no objects, enums, or width/serialization-internal tags).
 local ATTRIBUTE_SAFE_TAGS: { [string]: boolean } = {
     Bool = true,
     Float = true,
@@ -118,8 +112,7 @@ function Tags.knownTag(tag: string): boolean
     return CONTENT_TYPEOF[tag] ~= nil
 end
 
---- Whether `content` has the right runtime type for a pre-wrapped `{ type = tag, content }` [`DomValue`], so callers reject a mistyped value before it hits the wire.
---- Unknown tags return `false`.
+--- Whether `content` has the right runtime type for a pre-wrapped `{ type = tag, content }` [`DomValue`] (unknown tags return `false`).
 function Tags.contentMatchesTag(tag: string, content: any): boolean
     local expected = CONTENT_TYPEOF[tag]
     if expected == nil then
@@ -143,8 +136,7 @@ function Tags.contentMatchesTag(tag: string, content: any): boolean
     return typeof(content) == expected
 end
 
---- Wrap a raw Luau value as a [`DomValue`]; numbers become `Float`.
---- For integers build `{ type = "Int", content = n }` yourself - `Int` must be an integer within +-2^53 or the i64 encoding silently alters it.
+--- Wrap a raw Luau value as a [`DomValue`] (numbers become `Float`; for integers build `{ type = "Int", content = n }` yourself, keeping within +-2^53 or the i64 encoding silently alters it).
 function Tags.value(value: any): DomValue
     local tag = VALUE_TAGS[typeof(value)]
     assert(tag ~= nil, `cannot wrap a {typeof(value)} as a DomValue`)

@@ -6,9 +6,7 @@ use super::{DomId, DomInstance, DomUpdate};
 /// Represents a lazy, incremental update to a DOM.
 #[derive(Debug, Clone, Default, Serialize, ReverseDeserialize)]
 pub struct DomPatch {
-    /// Add a new instance, or refresh it.
-    ///
-    /// NOTE: the parent of the instance must exist within the DOM prior to adding it.
+    /// Add a new instance, or refresh it (the parent must already exist within the DOM).
     pub upserts: Vec<DomInstance>,
     /// The ref ids of nodes to remove.
     pub removals: Vec<DomId>,

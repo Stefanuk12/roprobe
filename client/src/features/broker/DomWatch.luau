@@ -61,6 +61,8 @@ function DomWatch.Start(self: DomWatch)
 
     self:_followRemovals()
     if self._isLazy then
+        -- Seed the roots so the tree has something to show; deeper levels load on demand.
+        self.onPatch:Fire(self._sync:Children(self._root))
         return
     end
 

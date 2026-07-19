@@ -1,41 +1,78 @@
-use std::{net::SocketAddr, sync::Arc};
-
-use futures_util::SinkExt;
-use tokio::sync::Notify;
-use tracing::{debug, info};
-
-use crate::{
-    Result,
-    protocol::{ClientMessage, DomId, ServerMessage},
-    server::{SessionDom, WsWrite},
-    upstream::Controls,
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, atomic::AtomicU8},
 };
 
+use futures_util::SinkExt;
+use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
+use tokio_tungstenite::tungstenite::Message;
+use tracing::{debug, info, warn};
+
+use crate::{
+    Context, Result,
+    protocol::{ClientMessage, DomId, OpResult, ServerMessage},
+    server::{DomRequest, Mirror, OpRequest, WsWrite},
+};
+
+#[derive(
+    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default, Serialize, Deserialize,
+)]
+pub struct SessionId(pub u32);
+impl core::fmt::Display for SessionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SessionId({})", self.0)
+    }
+}
+
 /// The broker's side of one accepted client connection.
+#[derive(Debug)]
 pub struct Session {
-    peer: SocketAddr,
+    ctx: Context,
+
+    pub id: SessionId,
+    pub peer: SocketAddr,
     write: WsWrite,
-    shutdown: Arc<Notify>,
-    controls: Arc<Controls>,
-    dom: SessionDom,
-    enum_families: Vec<String>,
+
+    pub mirror: Arc<Mirror>,
+    pub security_level: AtomicU8,
+    pending: HashMap<u32, oneshot::Sender<OpResult>>,
+    next_op_id: u32,
 }
 
 impl Session {
     /// Create a new session.
-    pub fn new(peer: SocketAddr, write: WsWrite, shutdown: Arc<Notify>, controls: Arc<Controls>) -> Self {
-        Self { peer, write, shutdown, controls, dom: SessionDom::new(), enum_families: Vec::new() }
+    pub fn new(
+        ctx: Context,
+        peer: SocketAddr,
+        write: WsWrite,
+        mirror: Arc<Mirror>,
+        security_level: u8,
+        id: SessionId,
+    ) -> Self {
+        Self {
+            ctx,
+            mirror,
+            security_level: security_level.into(),
+            peer,
+            write,
+            id,
+            pending: HashMap::new(),
+            next_op_id: 0,
+        }
     }
 
-    /// The client's lazily mirrored DOM.
-    pub fn dom(&self) -> &SessionDom {
-        &self.dom
-    }
-
-    /// Resolve an `Enum` family index to its Roblox family name via the client's `GetEnums()` table.
-    #[allow(dead_code, reason = "consumed by enum-family resolution once a DOM viewer needs names")]
-    pub fn enum_family(&self, index: u16) -> Option<&str> {
-        self.enum_families.get(index as usize).map(String::as_str)
+    /// Relay an upstream operation to the client.
+    pub async fn dispatch_operation(&mut self, request: OpRequest) -> Result<()> {
+        let id = self.next_op_id;
+        self.next_op_id = self.next_op_id.wrapping_add(1);
+        self.pending.insert(id, request.reply);
+        self.send(ServerMessage::Operation {
+            id,
+            op: request.operation,
+        })
+        .await
     }
 
     /// Send a message.
@@ -44,32 +81,45 @@ impl Session {
         Ok(())
     }
 
+    /// Forward a raw WebSocket frame, e.g. answering a keepalive ping with a pong
+    /// so the client's socket doesn't consider us dead and hang up.
+    pub async fn send_frame(&mut self, frame: Message) -> Result<()> {
+        self.write.send(frame).await?;
+        Ok(())
+    }
+
+    /// Relay a lazy dom-population request from an upstream to the client.
+    pub async fn handle_dom_request(&mut self, request: DomRequest) -> Result<()> {
+        match request {
+            DomRequest::Children(id) => self.request_children(id).await,
+            DomRequest::Node(id) => self.request_node(id).await,
+            DomRequest::Snapshot(id) => self.request_snapshot(id).await,
+            DomRequest::Search { from, query } => self.search(from, query).await,
+            DomRequest::Nodes(ids) => self.request_nodes(ids).await,
+        }
+    }
+
     /// Ask the client to mirror a node's immediate children - `None` for the watch root's top level.
-    #[allow(dead_code, reason = "caller lands with the Verde lazy-load integration")]
     pub async fn request_children(&mut self, id: Option<DomId>) -> Result<()> {
         self.send(ServerMessage::RequestChildren(id)).await
     }
 
     /// Ask the client to mirror a single node by id, without its children.
-    #[allow(dead_code, reason = "caller lands with the Verde lazy-load integration")]
     pub async fn request_node(&mut self, id: DomId) -> Result<()> {
         self.send(ServerMessage::RequestNode(id)).await
     }
 
     /// Ask the client to snapshot a subtree by id - `None` for the whole scope.
-    #[allow(dead_code, reason = "caller lands with the Verde lazy-load integration")]
     pub async fn request_snapshot(&mut self, id: Option<DomId>) -> Result<()> {
         self.send(ServerMessage::RequestSnapshot(id)).await
     }
 
     /// Ask the client to search `from`'s descendants for `query`.
-    #[allow(dead_code, reason = "caller lands with the Verde lazy-load integration")]
     pub async fn search(&mut self, from: DomId, query: String) -> Result<()> {
         self.send(ServerMessage::Search { from, query }).await
     }
 
     /// Ask the client to mirror several nodes by id in one patch.
-    #[allow(dead_code, reason = "caller lands with the Verde lazy-load integration")]
     pub async fn request_nodes(&mut self, ids: Vec<DomId>) -> Result<()> {
         self.send(ServerMessage::RequestNodes(ids)).await
     }
@@ -80,12 +130,13 @@ impl Session {
         match message {
             ClientMessage::Shutdown => {
                 info!(peer = %self.peer, "client requested shutdown");
-                self.shutdown.notify_one();
+                self.ctx.shutdown.notify_one();
             }
             ClientMessage::SetUpstream { upstream, enabled } => {
                 info!(peer = %self.peer, ?upstream, enabled, "client set upstream");
-                self.controls.set(upstream, enabled);
-                self.send(ServerMessage::UpstreamChanged { upstream, enabled }).await?;
+                self.ctx.controls.set(upstream, enabled);
+                self.send(ServerMessage::UpstreamChanged { upstream, enabled })
+                    .await?;
             }
             ClientMessage::UpdateDom(patch) => {
                 debug!(
@@ -94,11 +145,27 @@ impl Session {
                     removals = patch.removals.len(),
                     "client dom patch"
                 );
-                self.dom.apply(patch);
+                self.mirror.apply(patch);
             }
             ClientMessage::EnumFamilies(families) => {
-                info!(peer = %self.peer, count = families.len(), "client sent enum families");
-                self.enum_families = families;
+                info!(peer = %self.peer, count = families.len(), "client sent enum catalog");
+                self.mirror.set_enum_catalog(families);
+            }
+            ClientMessage::OperationResult { id, result } => match self.pending.remove(&id) {
+                Some(reply) => {
+                    let _ = reply.send(result);
+                }
+                None => {
+                    warn!(peer = %self.peer, id, "operation result for an unknown id, dropping")
+                }
+            },
+            ClientMessage::RequestActive => {
+                info!(peer = %self.peer, id = self.id.0, "client requested the active slot");
+                let _ = self.ctx.sessions.set_current(Some(self.id)).await;
+            }
+            // Control-only messages have no meaning on a syncing connection.
+            ClientMessage::SwapActive(..) | ClientMessage::ListSessions => {
+                warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }
         Ok(())
