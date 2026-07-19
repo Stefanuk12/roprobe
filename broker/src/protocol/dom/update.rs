@@ -14,7 +14,10 @@ pub enum TagChange {
     /// Replace the stored set wholesale (an empty list clears it).
     Replace(Vec<String>),
     /// Add and remove individual tags, leaving the rest untouched.
-    Delta { add: Vec<String>, remove: Vec<String> },
+    Delta {
+        add: Vec<String>,
+        remove: Vec<String>,
+    },
 }
 
 /// A lightweight change to an *already-mirrored* instance.

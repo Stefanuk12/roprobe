@@ -18,7 +18,9 @@ use crate::{
 /// deserialized into [`RawOperation`] and then lowered; a deserialize failure
 /// (bad tag, missing/mistyped field, unrecognisable value) yields `None`.
 pub fn to_operation(operation: &serde_json::Value) -> Option<Operation> {
-    RawOperation::deserialize(operation).ok().and_then(lower_operation)
+    RawOperation::deserialize(operation)
+        .ok()
+        .and_then(lower_operation)
 }
 
 /// The verde operation wire format: an internally-tagged union on `type`, with
@@ -696,9 +698,10 @@ fn describe(value: &DomValue, mirror: &Mirror, catalog: &[EnumFamily]) -> Render
                 z: *z,
             }),
         ),
-        DomValue::Vector2int16(x, y) => {
-            Rendered::plain("Vector2int16", RenderValue::Vector2int16(Vec2 { x: *x, y: *y }))
-        }
+        DomValue::Vector2int16(x, y) => Rendered::plain(
+            "Vector2int16",
+            RenderValue::Vector2int16(Vec2 { x: *x, y: *y }),
+        ),
         DomValue::Color3(c) | DomValue::Color3uint8(c) => {
             Rendered::plain("Color3", RenderValue::Color(color(c)))
         }
@@ -908,7 +911,6 @@ mod tests {
     fn to_value(value: &serde_json::Value) -> Option<DomValue> {
         RawValue::deserialize(value).ok().map(RawValue::into_dom)
     }
-
 
     #[test]
     fn renders_byte_blobs_as_uuid_or_hex() {

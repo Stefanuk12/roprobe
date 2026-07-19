@@ -34,9 +34,9 @@ pub async fn connect_broker() -> Result<WebSocketStream<MaybeTlsStream<TcpStream
         "ws://127.0.0.1:{port}/?token={}&control=1",
         lockfile.handshake.token
     );
-    let (ws, _) = connect_async(url.as_str())
-        .await
-        .map_err(|e| tokio::io::Error::other(format!("could not reach broker on port {port} ({e})")))?;
+    let (ws, _) = connect_async(url.as_str()).await.map_err(|e| {
+        tokio::io::Error::other(format!("could not reach broker on port {port} ({e})"))
+    })?;
 
     Ok(ws)
 }

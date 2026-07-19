@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Notify;
 
-use crate::{
-    lockfile::Lockfile, server::manager::Sessions, upstream::Controls,
-};
+use crate::{lockfile::Lockfile, server::manager::Sessions, upstream::Controls};
 
 /// A global context used throughout the broker.
 #[derive(Clone, Debug)]
@@ -20,7 +18,7 @@ impl Context {
         sessions: Sessions,
         lockfile: Lockfile,
         controls: Controls,
-        shutdown: Arc<Notify>
+        shutdown: Arc<Notify>,
     ) -> Self {
         Self {
             sessions,

@@ -4,7 +4,12 @@ use tokio::sync::Notify;
 use tracing::info;
 
 use crate::{
-    Context, HandshakeFormat, RunArgs, commands::CommandResult, lockfile::Lockfile, protocol::Handshake, server::Server, upstream::{self, verde::VerdeConnector},
+    Context, HandshakeFormat, RunArgs,
+    commands::CommandResult,
+    lockfile::Lockfile,
+    protocol::Handshake,
+    server::Server,
+    upstream::{self, verde::VerdeConnector},
 };
 
 pub async fn run(args: RunArgs, handshake_format: Option<HandshakeFormat>) -> CommandResult {

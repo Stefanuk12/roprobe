@@ -1,13 +1,14 @@
 use rbx_dom_weak::types::{
     Axes, BrickColor, CFrame, Color3, Color3uint8, ColorSequence, ColorSequenceKeypoint, Content,
-    CustomPhysicalProperties, Enum, Faces, Font, FontStyle, FontWeight, Matrix3, NumberRange, NumberSequence,
-    NumberSequenceKeypoint, PhysicalProperties, Ray, Rect, Ref, Region3, Region3int16, UDim, UDim2, Variant, Vector2,
-    Vector2int16, Vector3, Vector3int16,
+    CustomPhysicalProperties, Enum, Faces, Font, FontStyle, FontWeight, Matrix3, NumberRange,
+    NumberSequence, NumberSequenceKeypoint, PhysicalProperties, Ray, Rect, Ref, Region3,
+    Region3int16, UDim, UDim2, Variant, Vector2, Vector2int16, Vector3, Vector3int16,
 };
 use serde::{Deserialize, Serialize};
 use squash::roblox::{
-    Axes as WireAxes, Color3 as WireColor3, ColorSequenceKeypoint as WireColorKeypoint, Faces as WireFaces,
-    NumberSequenceKeypoint as WireNumberKeypoint, Region3 as WireRegion3, Udim as WireUdim, Udim2 as WireUdim2,
+    Axes as WireAxes, Color3 as WireColor3, ColorSequenceKeypoint as WireColorKeypoint,
+    Faces as WireFaces, NumberSequenceKeypoint as WireNumberKeypoint, Region3 as WireRegion3,
+    Udim as WireUdim, Udim2 as WireUdim2,
 };
 
 use super::{DomBytes, DomId};
@@ -93,12 +94,13 @@ impl DomValue {
                 UDim::new(u.y.scale, u.y.offset as i32),
             )),
             DomValue::NumberRange(min, max) => Variant::NumberRange(NumberRange::new(min, max)),
-            DomValue::Rect(min_x, min_y, max_x, max_y) => {
-                Variant::Rect(Rect::new(Vector2::new(min_x, min_y), Vector2::new(max_x, max_y)))
-            }
-            DomValue::BrickColor(number) => {
-                Variant::BrickColor(BrickColor::from_number(number).unwrap_or(BrickColor::MediumStoneGrey))
-            }
+            DomValue::Rect(min_x, min_y, max_x, max_y) => Variant::Rect(Rect::new(
+                Vector2::new(min_x, min_y),
+                Vector2::new(max_x, max_y),
+            )),
+            DomValue::BrickColor(number) => Variant::BrickColor(
+                BrickColor::from_number(number).unwrap_or(BrickColor::MediumStoneGrey),
+            ),
             DomValue::CFrame(c) => Variant::CFrame(cframe_from_components(c)),
             DomValue::Float32(f) => Variant::Float32(f),
             DomValue::Int32(i) => Variant::Int32(i),
@@ -117,10 +119,9 @@ impl DomValue {
                     Vector3::new(p.x + s.x / 2.0, p.y + s.y / 2.0, p.z + s.z / 2.0),
                 ))
             }
-            DomValue::Region3int16(ax, ay, az, bx, by, bz) => Variant::Region3int16(Region3int16::new(
-                Vector3int16::new(ax, ay, az),
-                Vector3int16::new(bx, by, bz),
-            )),
+            DomValue::Region3int16(ax, ay, az, bx, by, bz) => Variant::Region3int16(
+                Region3int16::new(Vector3int16::new(ax, ay, az), Vector3int16::new(bx, by, bz)),
+            ),
             DomValue::Axes(a) => {
                 let bits = (a.x as u8) | (a.y as u8) << 1 | (a.z as u8) << 2;
                 Variant::Axes(Axes::from_bits(bits).expect("valid axis bits"))
@@ -152,7 +153,11 @@ impl DomValue {
                     .map(|kp| {
                         ColorSequenceKeypoint::new(
                             kp.time as f32 / 255.0,
-                            Color3::new(kp.value.r as f32 / 255.0, kp.value.g as f32 / 255.0, kp.value.b as f32 / 255.0),
+                            Color3::new(
+                                kp.value.r as f32 / 255.0,
+                                kp.value.g as f32 / 255.0,
+                                kp.value.b as f32 / 255.0,
+                            ),
                         )
                     })
                     .collect(),
@@ -163,14 +168,18 @@ impl DomValue {
                     p[0], p[1], p[2], p[3], p[4], p[5],
                 )),
             }),
-            DomValue::OptionalCFrame(cframe) => Variant::OptionalCFrame(cframe.map(cframe_from_components)),
+            DomValue::OptionalCFrame(cframe) => {
+                Variant::OptionalCFrame(cframe.map(cframe_from_components))
+            }
             DomValue::Content(content) => Variant::Content(match content {
                 ContentValue::None => Content::none(),
                 ContentValue::Uri(uri) => match uri {
                     Some(uri) => Content::from_uri(uri),
                     None => Content::none(),
                 },
-                ContentValue::Object(id) => Content::from_referent(resolve(&id).unwrap_or_else(Ref::none)),
+                ContentValue::Object(id) => {
+                    Content::from_referent(resolve(&id).unwrap_or_else(Ref::none))
+                }
             }),
         }
     }
@@ -205,10 +214,16 @@ mod tests {
     /// `GetComponents()` hands the rotation over row-major and `Matrix3`'s `x`/`y`/`z` vectors are the matrix *rows* (rbx_xml's `<CFrame>` codec writes `orientation.x` out as `R00, R01, R02`), pinned here so a refactor can't silently transpose it.
     #[test]
     fn cframe_components_map_to_rows() {
-        let value = DomValue::CFrame([10.0, 20.0, 30.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let value = DomValue::CFrame([
+            10.0, 20.0, 30.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,
+        ]);
         let expected = CFrame::new(
             Vector3::new(10.0, 20.0, 30.0),
-            Matrix3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::new(4.0, 5.0, 6.0), Vector3::new(7.0, 8.0, 9.0)),
+            Matrix3::new(
+                Vector3::new(1.0, 2.0, 3.0),
+                Vector3::new(4.0, 5.0, 6.0),
+                Vector3::new(7.0, 8.0, 9.0),
+            ),
         );
         assert_eq!(value.into_variant(|_| None), Variant::CFrame(expected));
     }

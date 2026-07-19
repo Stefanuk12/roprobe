@@ -51,7 +51,9 @@ impl TryFrom<ServerMessage> for tokio_tungstenite::tungstenite::Message {
     type Error = squash::Error;
     fn try_from(value: ServerMessage) -> Result<Self, Self::Error> {
         // Ride a text frame as base64 — the executor's socket rejects binary frames.
-        value.to_bytes().map(|bytes| Self::Text(super::text_encode(&bytes).into()))
+        value
+            .to_bytes()
+            .map(|bytes| Self::Text(super::text_encode(&bytes).into()))
     }
 }
 
@@ -63,29 +65,49 @@ mod tests {
     #[test]
     fn request_wire_layouts_are_pinned() {
         // RequestChildren(None) -> bootstrap the top level: Option `None` flag, then tag 2.
-        assert_eq!(ServerMessage::RequestChildren(None).to_bytes().unwrap(), vec![0, 2]);
+        assert_eq!(
+            ServerMessage::RequestChildren(None).to_bytes().unwrap(),
+            vec![0, 2]
+        );
         // RequestChildren(Some(id)) -> string payload + Option `Some` flag, then tag 2.
         assert_eq!(
-            ServerMessage::RequestChildren(Some("9".into())).to_bytes().unwrap(),
+            ServerMessage::RequestChildren(Some("9".into()))
+                .to_bytes()
+                .unwrap(),
             vec![b'9', 1, 1, 2],
         );
         // RequestNode(id) -> string payload, then tag 3.
-        assert_eq!(ServerMessage::RequestNode("9".into()).to_bytes().unwrap(), vec![b'9', 1, 3]);
+        assert_eq!(
+            ServerMessage::RequestNode("9".into()).to_bytes().unwrap(),
+            vec![b'9', 1, 3]
+        );
         // RequestSnapshot(None) -> Option `None` flag, then tag 4.
-        assert_eq!(ServerMessage::RequestSnapshot(None).to_bytes().unwrap(), vec![0, 4]);
+        assert_eq!(
+            ServerMessage::RequestSnapshot(None).to_bytes().unwrap(),
+            vec![0, 4]
+        );
         // RequestSnapshot(Some(id)) -> string payload + Option `Some` flag, then tag 4.
         assert_eq!(
-            ServerMessage::RequestSnapshot(Some("9".into())).to_bytes().unwrap(),
+            ServerMessage::RequestSnapshot(Some("9".into()))
+                .to_bytes()
+                .unwrap(),
             vec![b'9', 1, 1, 4],
         );
         // Search: a struct variant — fields reversed (query, then from), tag 5 last.
         assert_eq!(
-            (ServerMessage::Search { from: "a".into(), query: "b".into() }).to_bytes().unwrap(),
+            (ServerMessage::Search {
+                from: "a".into(),
+                query: "b".into()
+            })
+            .to_bytes()
+            .unwrap(),
             vec![b'b', 1, b'a', 1, 5],
         );
         // RequestNodes: a Vec<DomId> — elements reversed then VLQ count, tag 6 last.
         assert_eq!(
-            ServerMessage::RequestNodes(vec!["a".into(), "b".into()]).to_bytes().unwrap(),
+            ServerMessage::RequestNodes(vec!["a".into(), "b".into()])
+                .to_bytes()
+                .unwrap(),
             vec![b'b', 1, b'a', 1, 2, 6],
         );
     }
@@ -96,7 +118,12 @@ mod tests {
         // op = Delete { node: "n" }: node string then Operation tag 1; then id 1
         // (u32 LE); then ServerMessage tag 7.
         assert_eq!(
-            (ServerMessage::Operation { id: 1, op: Operation::Delete { node: "n".into() } }).to_bytes().unwrap(),
+            (ServerMessage::Operation {
+                id: 1,
+                op: Operation::Delete { node: "n".into() }
+            })
+            .to_bytes()
+            .unwrap(),
             vec![b'n', 1, 1, 1, 0, 0, 0, 7],
         );
     }

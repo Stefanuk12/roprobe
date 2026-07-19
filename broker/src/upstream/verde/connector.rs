@@ -5,7 +5,13 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, info, warn};
 
-use crate::{Context, upstream::verde::{connection::{Connection, Served}, serialize}};
+use crate::{
+    Context,
+    upstream::verde::{
+        connection::{Connection, Served},
+        serialize,
+    },
+};
 
 type VerdeStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsResult = Result<(), tokio_tungstenite::tungstenite::Error>;
@@ -95,9 +101,12 @@ impl VerdeConnector {
             current.borrow_and_update();
 
             // Give the connection some time to populate.
-            match sessions.wait_current_dom_populated(Duration::from_secs(10)).await {
+            match sessions
+                .wait_current_dom_populated(Duration::from_secs(10))
+                .await
+            {
                 Some(c) => info!("client initialised verde with {c} nodes"),
-                None => info!("client could not be initialised?")
+                None => info!("client could not be initialised?"),
             };
 
             // The current session's roots snapshot and change feed.
@@ -110,7 +119,7 @@ impl VerdeConnector {
                 }
                 continue;
             };
-            
+
             // Grab the current session's mirror.
             let Some(mirror) = ({
                 sessions
@@ -124,7 +133,7 @@ impl VerdeConnector {
                 }
                 continue;
             };
-            
+
             // Serve this connection until it switches or the socket dies.
             conn.greet(snapshot).await?;
             match conn

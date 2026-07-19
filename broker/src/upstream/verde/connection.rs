@@ -72,7 +72,7 @@ impl Connection {
     }
 
     /// The main verde/DOM event loop for one session.
-    /// 
+    ///
     /// - serve requests
     /// - stream deltas
     /// - cleanup when the session switches or the socket dies
@@ -168,7 +168,7 @@ impl Connection {
                 } else {
                     mirror.with_dom(serialize::roots)
                 };
-                
+
                 self.tree.seed(&payload, full);
                 self.send(Outbound::ExplorerSnapshot {
                     payload,
@@ -266,7 +266,7 @@ impl Connection {
     }
 
     /// Send the entire mirror over, dropping buffered deltas.
-    /// 
+    ///
     /// Used when Verde lags behind, to refresh its view.
     async fn full_resync(&mut self, mirror: &Arc<Mirror>) -> WsResult {
         self.flush_at = None;

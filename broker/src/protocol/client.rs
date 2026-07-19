@@ -65,13 +65,15 @@ mod tests {
     use std::collections::HashMap;
 
     use squash::roblox::{
-        Axes as WireAxes, Color3 as WireColor3, ColorSequenceKeypoint as WireColorKeypoint, Faces as WireFaces,
-        NumberSequenceKeypoint as WireNumberKeypoint, Region3 as WireRegion3, Udim as WireUdim, Udim2 as WireUdim2,
-        Vector3 as WireVector3,
+        Axes as WireAxes, Color3 as WireColor3, ColorSequenceKeypoint as WireColorKeypoint,
+        Faces as WireFaces, NumberSequenceKeypoint as WireNumberKeypoint, Region3 as WireRegion3,
+        Udim as WireUdim, Udim2 as WireUdim2, Vector3 as WireVector3,
     };
 
     use super::*;
-    use crate::protocol::{ContentValue, DomBytes, DomInstance, DomPatch, DomUpdate, DomValue, TagChange};
+    use crate::protocol::{
+        ContentValue, DomBytes, DomInstance, DomPatch, DomUpdate, DomValue, TagChange,
+    };
 
     #[test]
     fn shutdown_round_trips_as_a_single_tag_byte() {
@@ -89,7 +91,10 @@ mod tests {
         // pinned so a reorder can't silently break the takeover message.
         let bytes = ClientMessage::RequestActive.to_bytes().unwrap();
         assert_eq!(bytes, [0x05]);
-        assert!(matches!(ClientMessage::from_bytes(bytes).unwrap(), ClientMessage::RequestActive));
+        assert!(matches!(
+            ClientMessage::from_bytes(bytes).unwrap(),
+            ClientMessage::RequestActive
+        ));
     }
 
     #[test]
@@ -115,7 +120,10 @@ mod tests {
 
         let msg = ClientMessage::EnumFamilies(vec![EnumFamily {
             name: "A".into(),
-            items: vec![EnumEntry { name: "X".into(), value: 1 }],
+            items: vec![EnumEntry {
+                name: "X".into(),
+                value: 1,
+            }],
         }]);
         // One family (plain struct: name then items forward), items a Vec of one EnumEntry (name then value forward), then family VLQ count and tag 3.
         #[rustfmt::skip]
@@ -128,21 +136,33 @@ mod tests {
             3,                  // ClientMessage tag (EnumFamilies)
         ];
         assert_eq!(msg.to_bytes().unwrap(), expected);
-        let ClientMessage::EnumFamilies(families) = ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap() else {
+        let ClientMessage::EnumFamilies(families) =
+            ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap()
+        else {
             panic!("decoded a different variant");
         };
         assert_eq!(families[0].name, "A");
-        assert_eq!(families[0].items, vec![EnumEntry { name: "X".to_string(), value: 1 }]);
+        assert_eq!(
+            families[0].items,
+            vec![EnumEntry {
+                name: "X".to_string(),
+                value: 1
+            }]
+        );
     }
 
     /// Pins [`ClientMessage::OperationResult`]: a struct variant (fields reversed — `result` before `id`), tag 4 last, with the `result` payload a typed [`OpResult`] mirrored by hand in the Luau codec.
     #[test]
     fn operation_result_round_trips_and_is_pinned() {
-        let msg = ClientMessage::OperationResult { id: 1, result: OpResult::Ok };
+        let msg = ClientMessage::OperationResult {
+            id: 1,
+            result: OpResult::Ok,
+        };
         // OpResult::Ok is a bare unit variant: just its tag byte 0, then id 1
         // (u32 LE), then ClientMessage tag 4.
         assert_eq!(msg.to_bytes().unwrap(), vec![0, 1, 0, 0, 0, 4]);
-        let ClientMessage::OperationResult { id, result } = ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap()
+        let ClientMessage::OperationResult { id, result } =
+            ClientMessage::from_bytes(msg.to_bytes().unwrap()).unwrap()
         else {
             panic!("decoded a different variant");
         };
@@ -198,10 +218,19 @@ mod tests {
         assert_eq!(patch.upserts[1].has_children, false);
         assert_eq!(patch.upserts[0].tags, None);
         assert_eq!(patch.upserts[1].parent.as_deref(), Some("a1"));
-        assert_eq!(patch.upserts[1].properties.get("Anchored"), Some(&DomValue::Bool(true)));
-        assert_eq!(patch.upserts[1].attributes.get("Health"), Some(&DomValue::Float(50.0)));
+        assert_eq!(
+            patch.upserts[1].properties.get("Anchored"),
+            Some(&DomValue::Bool(true))
+        );
+        assert_eq!(
+            patch.upserts[1].attributes.get("Health"),
+            Some(&DomValue::Float(50.0))
+        );
         assert_eq!(patch.upserts[1].tags, Some(vec!["Enemy".to_string()]));
-        assert_eq!(patch.upserts[2].properties.get("Value"), Some(&DomValue::Ref("b2".into())));
+        assert_eq!(
+            patch.upserts[2].properties.get("Value"),
+            Some(&DomValue::Ref("b2".into()))
+        );
         assert_eq!(patch.removals, vec!["c3".to_string()]);
     }
 
@@ -278,7 +307,10 @@ mod tests {
         assert_eq!(msg.to_bytes().unwrap(), expected);
 
         // DomValue::Ref pinned on its own: payload string then tag byte 4, reproduced by hand in the Luau `Messages.luau` encoder.
-        assert_eq!(squash::serde_serialize(&DomValue::Ref("9".into())).unwrap(), vec![b'9', 1, 4]);
+        assert_eq!(
+            squash::serde_serialize(&DomValue::Ref("9".into())).unwrap(),
+            vec![b'9', 1, 4]
+        );
     }
 
     /// Pins a [`DomUpdate`]'s wire layout — the key-removal encoding (`None` values) and the tag-delta variant — mirrored by the Luau `dom-update` check.
@@ -288,7 +320,10 @@ mod tests {
             id: "u".into(),
             properties: HashMap::from([("P".to_string(), Some(DomValue::Bool(false)))]),
             attributes: HashMap::from([("B".to_string(), None)]),
-            tags: TagChange::Delta { add: vec!["a".into()], remove: vec!["r".into()] },
+            tags: TagChange::Delta {
+                add: vec!["a".into()],
+                remove: vec!["r".into()],
+            },
         };
 
         #[rustfmt::skip]
@@ -319,11 +354,20 @@ mod tests {
         assert_eq!(back.id, "u");
         assert_eq!(back.properties.get("P"), Some(&Some(DomValue::Bool(false))));
         assert_eq!(back.attributes.get("B"), Some(&None));
-        assert_eq!(back.tags, TagChange::Delta { add: vec!["a".into()], remove: vec!["r".into()] });
+        assert_eq!(
+            back.tags,
+            TagChange::Delta {
+                add: vec!["a".into()],
+                remove: vec!["r".into()]
+            }
+        );
 
         // The other TagChange arms, pinned standalone.
         assert_eq!(squash::serde_serialize(&TagChange::None).unwrap(), vec![0]);
-        assert_eq!(squash::serde_serialize(&TagChange::Replace(vec!["t".into()])).unwrap(), vec![b't', 1, 1, 1]);
+        assert_eq!(
+            squash::serde_serialize(&TagChange::Replace(vec!["t".into()])).unwrap(),
+            vec![b't', 1, 1, 1]
+        );
     }
 
     /// Pins every `DomValue` variant's frame (tuple-variant fields land on the wire *reversed*, last field first, tag byte last), which the Luau `Messages.luau` encoder must reproduce by hand.
@@ -342,22 +386,47 @@ mod tests {
             (DomValue::Vector2(1.0, 2.5), le(&[1.0, 2.5], 6)),
             (DomValue::Vector3(1.0, 2.5, -3.0), le(&[1.0, 2.5, -3.0], 7)),
             // Color3 now rides squash's u8 codec: `Color3 { b, g, r }` forward, tag last.
-            (DomValue::Color3(WireColor3 { r: 128, g: 64, b: 255 }), vec![255, 64, 128, 8]),
+            (
+                DomValue::Color3(WireColor3 {
+                    r: 128,
+                    g: 64,
+                    b: 255,
+                }),
+                vec![255, 64, 128, 8],
+            ),
             // UDim now rides squash's `Udim`: offset then scale, both f32.
             (
-                DomValue::UDim(WireUdim { offset: 10.0, scale: 0.5 }),
-                [10.0f32.to_le_bytes().to_vec(), 0.5f32.to_le_bytes().to_vec(), vec![9]].concat(),
+                DomValue::UDim(WireUdim {
+                    offset: 10.0,
+                    scale: 0.5,
+                }),
+                [
+                    10.0f32.to_le_bytes().to_vec(),
+                    0.5f32.to_le_bytes().to_vec(),
+                    vec![9],
+                ]
+                .concat(),
             ),
             (DomValue::NumberRange(1.0, 2.5), le(&[1.0, 2.5], 11)),
-            (DomValue::Rect(0.0, 0.5, 1.0, 2.5), le(&[0.0, 0.5, 1.0, 2.5], 12)),
+            (
+                DomValue::Rect(0.0, 0.5, 1.0, 2.5),
+                le(&[0.0, 0.5, 1.0, 2.5], 12),
+            ),
             (DomValue::BrickColor(194), vec![194, 0, 13]),
             (
                 DomValue::CFrame([1.0, 2.0, 3.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]),
-                le(&[1.0, 2.0, 3.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], 14),
+                le(
+                    &[1.0, 2.0, 3.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                    14,
+                ),
             ),
         ];
         for (value, expected) in cases {
-            assert_eq!(squash::serde_serialize(&value).unwrap(), expected, "frame mismatch for {value:?}");
+            assert_eq!(
+                squash::serde_serialize(&value).unwrap(),
+                expected,
+                "frame mismatch for {value:?}"
+            );
             let mut bytes = expected.clone();
             let back: DomValue = squash::serde_deserialize(&mut bytes).unwrap();
             assert_eq!(back, value);
@@ -365,8 +434,14 @@ mod tests {
 
         // UDim2 is squash's `Udim2 { y, x }`: each `Udim` forward, y before x.
         let udim2 = DomValue::UDim2(WireUdim2 {
-            x: WireUdim { offset: 10.0, scale: 0.5 },
-            y: WireUdim { offset: -2.0, scale: 0.25 },
+            x: WireUdim {
+                offset: 10.0,
+                scale: 0.5,
+            },
+            y: WireUdim {
+                offset: -2.0,
+                scale: 0.25,
+            },
         });
         let expected = [
             (-2.0f32).to_le_bytes().to_vec(),
@@ -378,7 +453,10 @@ mod tests {
         .concat();
         assert_eq!(squash::serde_serialize(&udim2).unwrap(), expected);
         let mut bytes = expected.clone();
-        assert_eq!(squash::serde_deserialize::<DomValue>(&mut bytes).unwrap(), udim2);
+        assert_eq!(
+            squash::serde_deserialize::<DomValue>(&mut bytes).unwrap(),
+            udim2
+        );
     }
 
     /// Same contract as `dom_value_wire_frames_are_pinned`, for the variants past `CFrame` (tags 15..), mirrored by hand in `Messages.luau`.
@@ -399,14 +477,33 @@ mod tests {
         let identity_at_origin = [1.0, 2.0, 3.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let cases: Vec<(DomValue, Vec<u8>)> = vec![
             (DomValue::Float32(1.5), [f32s(&[1.5]), vec![15]].concat()),
-            (DomValue::Int32(-7), [(-7i32).to_le_bytes().to_vec(), vec![16]].concat()),
+            (
+                DomValue::Int32(-7),
+                [(-7i32).to_le_bytes().to_vec(), vec![16]].concat(),
+            ),
             (DomValue::ContentId("r".into()), vec![b'r', 1, 17]),
             // Raw bytes + VLQ length, like a string but without UTF-8 rules.
-            (DomValue::BinaryString(DomBytes(vec![0, 255])), vec![0, 255, 2, 18]),
+            (
+                DomValue::BinaryString(DomBytes(vec![0, 255])),
+                vec![0, 255, 2, 18],
+            ),
             // Color3uint8 is the same squash u8 codec — `Color3 { b, g, r }` forward.
-            (DomValue::Color3uint8(WireColor3 { r: 255, g: 128, b: 0 }), vec![0, 128, 255, 19]),
-            (DomValue::Vector2int16(1, -2), [i16s(&[1, -2]), vec![20]].concat()),
-            (DomValue::Vector3int16(1, -2, 3), [i16s(&[1, -2, 3]), vec![21]].concat()),
+            (
+                DomValue::Color3uint8(WireColor3 {
+                    r: 255,
+                    g: 128,
+                    b: 0,
+                }),
+                vec![0, 128, 255, 19],
+            ),
+            (
+                DomValue::Vector2int16(1, -2),
+                [i16s(&[1, -2]), vec![20]].concat(),
+            ),
+            (
+                DomValue::Vector3int16(1, -2, 3),
+                [i16s(&[1, -2, 3]), vec![21]].concat(),
+            ),
             (
                 DomValue::Ray(1.0, 2.0, 3.0, 0.0, 1.0, 0.0),
                 [f32s(&[1.0, 2.0, 3.0, 0.0, 1.0, 0.0]), vec![22]].concat(),
@@ -441,21 +538,42 @@ mod tests {
             // Faces rides squash's u8 codec (back=1, bottom=2, front=4, left=8,
             // right=16, top=32): front + top set = 0b100100 = 36.
             (
-                DomValue::Faces(WireFaces { back: false, bottom: false, front: true, left: false, right: false, top: true }),
+                DomValue::Faces(WireFaces {
+                    back: false,
+                    bottom: false,
+                    front: true,
+                    left: false,
+                    right: false,
+                    top: true,
+                }),
                 vec![36, 26],
             ),
             // (family, weight u16, style u8), fields reversed like any tuple variant.
             (
                 DomValue::Font("X".into(), 700, 1),
-                [vec![1], 700u16.to_le_bytes().to_vec(), vec![b'X', 1], vec![27]].concat(),
+                [
+                    vec![1],
+                    700u16.to_le_bytes().to_vec(),
+                    vec![b'X', 1],
+                    vec![27],
+                ]
+                .concat(),
             ),
             // Vec elements reversed; each keypoint is a `NumberSequenceKeypoint`
             // struct written forward as (value, envelope, time) — the layout of
             // `Squash.NumberSequenceKeypoint(f32)` on the client.
             (
                 DomValue::NumberSequence(vec![
-                    WireNumberKeypoint { value: 1.0, envelope: 0.0, time: 0.0 },
-                    WireNumberKeypoint { value: 0.5, envelope: 0.0, time: 1.0 },
+                    WireNumberKeypoint {
+                        value: 1.0,
+                        envelope: 0.0,
+                        time: 0.0,
+                    },
+                    WireNumberKeypoint {
+                        value: 0.5,
+                        envelope: 0.0,
+                        time: 1.0,
+                    },
                 ]),
                 [f32f(&[0.5, 0.0, 1.0]), f32f(&[1.0, 0.0, 0.0]), vec![2, 28]].concat(),
             ),
@@ -464,7 +582,11 @@ mod tests {
             // `serdeArray(Squash.ColorSequenceKeypoint())`.
             (
                 DomValue::ColorSequence(vec![WireColorKeypoint {
-                    value: WireColor3 { r: 10, g: 20, b: 30 },
+                    value: WireColor3 {
+                        r: 10,
+                        g: 20,
+                        b: 30,
+                    },
                     time: 128.0,
                 }]),
                 vec![30, 20, 10, 128, 1, 29],
@@ -483,12 +605,22 @@ mod tests {
             ),
             // Content nests its own enum (payload + inner tag, then outer tag), and Uri's source is optional: Some adds a 0x01 flag after the string, None collapses to a lone 0x00.
             (DomValue::Content(ContentValue::None), vec![0, 32]),
-            (DomValue::Content(ContentValue::Uri(Some("u".into()))), vec![b'u', 1, 1, 1, 32]),
+            (
+                DomValue::Content(ContentValue::Uri(Some("u".into()))),
+                vec![b'u', 1, 1, 1, 32],
+            ),
             (DomValue::Content(ContentValue::Uri(None)), vec![0, 1, 32]),
-            (DomValue::Content(ContentValue::Object("5".into())), vec![b'5', 1, 2, 32]),
+            (
+                DomValue::Content(ContentValue::Object("5".into())),
+                vec![b'5', 1, 2, 32],
+            ),
         ];
         for (value, expected) in cases {
-            assert_eq!(squash::serde_serialize(&value).unwrap(), expected, "frame mismatch for {value:?}");
+            assert_eq!(
+                squash::serde_serialize(&value).unwrap(),
+                expected,
+                "frame mismatch for {value:?}"
+            );
             let mut bytes = expected.clone();
             let back: DomValue = squash::serde_deserialize(&mut bytes).unwrap();
             assert_eq!(back, value);

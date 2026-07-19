@@ -1,10 +1,12 @@
-use std::{
-    ops::Deref, sync::Arc, time::Duration,
+use std::{ops::Deref, sync::Arc, time::Duration};
+use tokio::{
+    sync::{RwLock, broadcast, watch},
+    time,
 };
-use tokio::{sync::{RwLock, broadcast, watch}, time};
 
 use crate::{
-    protocol::SessionInfo, server::{DomChange, Session, SessionDom, SessionId},
+    protocol::SessionInfo,
+    server::{DomChange, Session, SessionDom, SessionId},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -49,7 +51,7 @@ impl SessionsHolder {
     pub fn insert(&mut self, session: Session) {
         let id = session.id;
         self.store.push(session);
-        
+
         if self.store.len() == 1 {
             // NOTE: this is infallable because we just added current in
             let _ = self.set_current(Some(id));
@@ -158,12 +160,12 @@ impl Sessions {
     pub async fn wait_current_dom_populated(&self, timeout: Duration) -> Option<usize> {
         let (_, mut rx, current_count) = self.subscribe_current_dom(|d| d.len()).await?;
         if current_count > 0 {
-            return Some(current_count)
+            return Some(current_count);
         }
 
         match time::timeout(timeout, rx.recv()).await {
             Ok(_) => self.with_dom(|dom| dom.len()).await,
-            _ => Some(0)
+            _ => Some(0),
         }
     }
 }

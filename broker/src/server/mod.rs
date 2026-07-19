@@ -15,8 +15,11 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_tungstenite::{
-    WebSocketStream, accept_hdr_async, tungstenite::{
-        Bytes, Message, handshake::server::{ErrorResponse, Request, Response}, http::{Response as HttpResponse, StatusCode},
+    WebSocketStream, accept_hdr_async,
+    tungstenite::{
+        Bytes, Message,
+        handshake::server::{ErrorResponse, Request, Response},
+        http::{Response as HttpResponse, StatusCode},
     },
 };
 use tracing::{error, info, warn};
@@ -194,7 +197,7 @@ impl Server {
             write,
             mirror,
             self.default_security_level,
-            id
+            id,
         );
         session.send(ServerMessage::Hello).await?;
         self.ctx.sessions.write().await.insert(session);
@@ -280,7 +283,7 @@ impl Server {
                     let outcome = match self.ctx.sessions.set_current(Some(id)).await {
                         Ok(Some(id)) => Ok(Some(id.0)),
                         Ok(None) => Ok(None::<u32>),
-                        Err(e) => Err(e)
+                        Err(e) => Err(e),
                     };
                     let id = id.0;
                     info!(%peer, id, ?outcome, "control swap");

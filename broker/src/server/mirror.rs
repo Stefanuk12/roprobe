@@ -21,7 +21,10 @@ pub struct OpRequest {
 
 /// A fire-and-forget lazy-population request from an upstream (verde) for the client to mirror more of the tree, whose nodes arrive asynchronously as a [`DomPatch`] on the change feed rather than a direct reply.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-#[allow(dead_code, reason = "node/snapshot/search/nodes land as verde wires each lazy path; children is live")]
+#[allow(
+    dead_code,
+    reason = "node/snapshot/search/nodes land as verde wires each lazy path; children is live"
+)]
 pub enum DomRequest {
     /// Mirror a node's immediate children — `None` for the watch root's top level.
     Children(Option<DomId>),
@@ -71,7 +74,10 @@ impl Mirror {
     }
 
     /// Atomically subscribe to future changes and read the current DOM (one lock; see [`Mirror::apply`]).
-    pub fn subscribe_with<R>(&self, read: impl FnOnce(&SessionDom) -> R) -> (broadcast::Receiver<Arc<DomChange>>, R) {
+    pub fn subscribe_with<R>(
+        &self,
+        read: impl FnOnce(&SessionDom) -> R,
+    ) -> (broadcast::Receiver<Arc<DomChange>>, R) {
         let dom = self.dom.lock().expect("mirror dom lock");
         let receiver = self.changes.subscribe();
         let value = read(&dom);
@@ -104,7 +110,11 @@ impl Mirror {
 
     /// A clone of the current session's operation sink, if one is active.
     pub fn op_sink(&self) -> Option<mpsc::Sender<OpRequest>> {
-        self.op_sink.lock().expect("mirror op sink lock").as_ref().map(|sink| sink.clone())
+        self.op_sink
+            .lock()
+            .expect("mirror op sink lock")
+            .as_ref()
+            .map(|sink| sink.clone())
     }
 
     /// Point lazy dom-population requests at the now-active client session `owner`.
@@ -122,7 +132,11 @@ impl Mirror {
 
     /// A clone of the current session's dom-request sink, if one is active.
     pub fn dom_sink(&self) -> Option<mpsc::Sender<DomRequest>> {
-        self.dom_sink.lock().expect("mirror dom sink lock").as_ref().map(|sink| sink.clone())
+        self.dom_sink
+            .lock()
+            .expect("mirror dom sink lock")
+            .as_ref()
+            .map(|sink| sink.clone())
     }
 
     /// Store the client's enum catalog (sent once on connect).
@@ -137,7 +151,10 @@ impl Mirror {
 
     /// The `(name, class)` of a mirrored instance for resolving a `DomValue::Ref` to a display name; `None` if unmirrored.
     pub fn resolve_ref(&self, id: &str) -> Option<(String, String)> {
-        self.with_dom(|dom| dom.get(id).map(|instance| (instance.name.clone(), instance.class.to_string())))
+        self.with_dom(|dom| {
+            dom.get(id)
+                .map(|instance| (instance.name.clone(), instance.class.to_string()))
+        })
     }
 }
 
@@ -148,12 +165,20 @@ mod tests {
     #[tokio::test]
     async fn dom_requests_reach_the_installed_sink_until_cleared() {
         let mirror = Mirror::new();
-        assert!(mirror.dom_sink().is_none(), "no sink before a session installs one");
+        assert!(
+            mirror.dom_sink().is_none(),
+            "no sink before a session installs one"
+        );
 
         let (tx, mut rx) = mpsc::channel::<DomRequest>(4);
         mirror.install_dom_sink(tx);
 
-        mirror.dom_sink().expect("sink installed").send(DomRequest::Children(None)).await.unwrap();
+        mirror
+            .dom_sink()
+            .expect("sink installed")
+            .send(DomRequest::Children(None))
+            .await
+            .unwrap();
         assert!(matches!(rx.recv().await, Some(DomRequest::Children(None))));
     }
 }
