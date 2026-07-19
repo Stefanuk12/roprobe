@@ -97,13 +97,14 @@ pub enum HandshakeFormat {
 }
 
 /// The highest property write-security tier the inspector may show; higher tiers expose more Roblox-internal properties (e.g. `Player.User` at `roblox`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum SecurityLevel {
     /// Only freely-writable properties.
     None,
     /// ...plus plugin-writable ones.
     Plugin,
     /// ...plus local-user-writable ones (the default).
+    #[default]
     LocalUser,
     /// ...plus Roblox-script-writable ones.
     RobloxScript,

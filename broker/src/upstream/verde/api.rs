@@ -3,28 +3,18 @@ use std::{
     sync::OnceLock,
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_tuple::Deserialize_tuple;
 
-mod bool_as_int {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &bool, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u8(*v as u8)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
-        Ok(u8::deserialize(d)? != 0)
-    }
+pub fn bool_as_int<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    Ok(u8::deserialize(d)? != 0)
 }
-
-pub const DEFAULT_SECURITY_LEVEL: u8 = 2;
 
 /// One property's inspector metadata.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Deserialize_tuple)]
 pub struct PropMeta {
     pub category: String,
-    #[serde(with = "bool_as_int")]
+    #[serde(deserialize_with = "bool_as_int")]
     pub read_only: bool,
     pub layout_order: u32,
     pub security_level: u8,
@@ -97,7 +87,9 @@ pub fn property_meta(class: &str, property: &str) -> Option<PropMeta> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::SecurityLevel;
+
+use super::*;
 
     #[test]
     fn resolves_inherited_properties_and_read_only() {
@@ -146,7 +138,7 @@ mod tests {
         // `Player.User` is Roblox-only-write (ordinal 4): hidden at the default
         // level, revealed only when the threshold is raised to it.
         assert!(
-            !class_properties("Player", DEFAULT_SECURITY_LEVEL)
+            !class_properties("Player", SecurityLevel::default().ordinal())
                 .iter()
                 .any(|p| p == "User")
         );
@@ -154,7 +146,7 @@ mod tests {
         // Ordinary read-only props stay visible at the default level.
         for name in ["AccountAge", "UserId", "MembershipType"] {
             assert!(
-                class_properties("Player", DEFAULT_SECURITY_LEVEL)
+                class_properties("Player", SecurityLevel::default().ordinal())
                     .iter()
                     .any(|p| p == name),
                 "expected {name} at the default level"

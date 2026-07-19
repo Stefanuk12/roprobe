@@ -185,7 +185,7 @@ impl Server {
 
         // Create and add the session
         let (write, mut read) = ws.split();
-        let id = SessionId(69);
+        let id = SessionId(rand::random());
         let mut session = Session::new(
             self.ctx.clone(),
             peer,

@@ -205,16 +205,6 @@ fn attribute_default(kind: &str) -> Option<DomValue> {
     })
 }
 
-/// Build a generic [`DomValue`] from one verde value by shape, where enums and
-/// instance references can't be typed here (verde is loose and the broker has no
-/// reflection) so they ride a scalar the client resolves against the live type.
-///
-/// Kept as a named entry point (used by tests / callers) over the [`RawValue`]
-/// wire form.
-fn to_value(value: &serde_json::Value) -> Option<DomValue> {
-    RawValue::deserialize(value).ok().map(RawValue::into_dom)
-}
-
 /// A verde value by shape. Untagged: serde tries each variant top-to-bottom and
 /// takes the first that fits, so the declaration order below *is* the shape
 /// precedence (UDim2 before the numeric vectors, NumberRange before Rect, etc.),
@@ -908,6 +898,17 @@ mod tests {
 
     use super::*;
     use crate::protocol::{EnumEntry, EnumFamily};
+
+    /// Build a generic [`DomValue`] from one verde value by shape, where enums and
+    /// instance references can't be typed here (verde is loose and the broker has no
+    /// reflection) so they ride a scalar the client resolves against the live type.
+    ///
+    /// Kept as a named entry point (used by tests / callers) over the [`RawValue`]
+    /// wire form.
+    fn to_value(value: &serde_json::Value) -> Option<DomValue> {
+        RawValue::deserialize(value).ok().map(RawValue::into_dom)
+    }
+
 
     #[test]
     fn renders_byte_blobs_as_uuid_or_hex() {
