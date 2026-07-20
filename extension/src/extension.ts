@@ -3,11 +3,8 @@ import { BrokerManager } from "./broker";
 
 let broker: BrokerManager | undefined;
 
-// This method is called when your extension is activated.
 export async function activate(context: vscode.ExtensionContext) {
-	broker = new BrokerManager(context);
-	context.subscriptions.push(broker);
-
+	console.log("roprobe activating")
 	context.subscriptions.push(
 		vscode.commands.registerCommand("roprobe.restartBroker", async () => {
 			try {
@@ -19,8 +16,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	);
 
-	// Bring the broker up on activation. Failures here are non-intrusive (logged to
-	// the "roprobe" output channel) so a not-yet-built binary doesn't nag on startup.
+	broker = new BrokerManager(context);
+	context.subscriptions.push(broker);
+
 	try {
 		await broker.start();
 	} catch (err) {

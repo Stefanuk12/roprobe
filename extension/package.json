@@ -20,7 +20,8 @@
     "commands": [
       {
         "command": "roprobe.restartBroker",
-        "title": "roprobe: Restart Broker"
+        "title": "Restart Broker",
+        "category": "roprobe"
       }
     ]
   },
