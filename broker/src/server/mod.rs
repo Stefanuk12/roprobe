@@ -2,7 +2,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
@@ -33,6 +33,8 @@ pub mod manager;
 import!(dom, mirror, session);
 
 pub type WsWrite = SplitSink<WebSocketStream<TcpStream>, Message>;
+
+const NO_SECURITY_QUERY: u8 = u8::MAX;
 
 enum ReadNext {
     ClientMessage(ClientMessage),
@@ -141,14 +143,14 @@ impl Server {
     }
 
     async fn handle_connection(&self, stream: TcpStream, peer: SocketAddr) -> crate::Result<()> {
-        // A control connection (the `swap`/`sessions`/`stop` commands) authenticates
-        // like any other but doesn't sync a DataModel, so it stays out of the gate.
         let control = Arc::new(AtomicBool::new(false));
+        let security = Arc::new(AtomicU8::new(NO_SECURITY_QUERY));
 
         // Verify the auth token, otherwise reject the request.
         let callback = {
             let token = Arc::new(self.ctx.lockfile.handshake.token.as_str());
             let control = Arc::clone(&control);
+            let security = Arc::clone(&security);
             move |req: &Request, response: Response| -> Result<Response, ErrorResponse> {
                 let query = req.uri().query().unwrap_or_default();
 
@@ -162,6 +164,9 @@ impl Server {
 
                 if Self::query_is_control(query) {
                     control.store(true, Ordering::Relaxed);
+                }
+                if let Some(level) = Self::query_security(query) {
+                    security.store(level, Ordering::Relaxed);
                 }
 
                 Ok(response)
@@ -177,6 +182,12 @@ impl Server {
             return self.handle_control_connection(ws, peer).await;
         }
 
+        // The client's declared level, falling back to the broker default.
+        let security_level = match security.load(Ordering::Relaxed) {
+            NO_SECURITY_QUERY => self.default_security_level,
+            level => level,
+        };
+
         // Non-control after this
         info!(%peer, "client connected");
 
@@ -191,16 +202,9 @@ impl Server {
         // Create and add the session
         let (write, mut read) = ws.split();
         let id = SessionId(rand::random());
-        let mut session = Session::new(
-            self.ctx.clone(),
-            peer,
-            write,
-            mirror,
-            self.default_security_level,
-            id,
-        );
+        let mut session = Session::new(self.ctx.clone(), peer, write, mirror, security_level, id);
         session.send(ServerMessage::Hello).await?;
-        self.ctx.sessions.write().await.insert(session);
+        self.ctx.sessions.insert(session).await;
         let session_guard = self.ctx.controls.track_session();
 
         // Serve client frames and upstream operation relays until the socket closes.
@@ -256,7 +260,7 @@ impl Server {
         };
 
         // Remove the client
-        self.ctx.sessions.write().await.remove(id);
+        self.ctx.sessions.remove(id).await;
         drop(session_guard);
         info!(%peer, id = id.0, "client disconnected");
         outcome
@@ -270,35 +274,85 @@ impl Server {
         peer: SocketAddr,
     ) -> crate::Result<()> {
         let (mut write, mut read) = ws.split();
-        while let Ok(message) = read_next(peer, &mut read).await {
-            match message {
-                ReadNext::Noop => continue,
-                ReadNext::Close => break,
-                ReadNext::ClientMessage(ClientMessage::Shutdown) => {
-                    info!(%peer, "control requested shutdown");
-                    self.ctx.shutdown.notify_one();
-                    break;
-                }
-                ReadNext::ClientMessage(ClientMessage::SwapActive(id)) => {
-                    let outcome = match self.ctx.sessions.set_current(Some(id)).await {
-                        Ok(Some(id)) => Ok(Some(id.0)),
-                        Ok(None) => Ok(None::<u32>),
-                        Err(e) => Err(e),
+        let mut on_session_added = self.ctx.sessions.subscribe_session_added();
+        let mut on_session_removed = self.ctx.sessions.subscribe_session_removed();
+
+        loop {
+            tokio::select! {
+                new_session = on_session_added.recv() => {
+                    let new_session = match new_session {
+                        Ok(x) => x,
+                        Err(e) => {
+                            warn!(%e, "error");
+                            continue
+                        }
                     };
-                    let id = id.0;
-                    info!(%peer, id, ?outcome, "control swap");
+
+                    write.send(ServerMessage::NewSession(new_session).try_into()?).await?;
                 }
-                ReadNext::ClientMessage(ClientMessage::ListSessions) => {
-                    let sessions = self.ctx.sessions.holder.read().await.list();
-                    write
-                        .send(ServerMessage::Sessions(sessions).try_into()?)
-                        .await?;
+                remove_session = on_session_removed.recv() => {
+                    let remove_session = match remove_session {
+                        Ok(x) => x,
+                        Err(e) => {
+                            warn!(%e, "error");
+                            continue
+                        }
+                    };
+
+                    write.send(ServerMessage::RemoveSession(remove_session).try_into()?).await?;
                 }
-                ReadNext::Ping(data) => {
-                    write.send(Message::Pong(data)).await?;
-                }
-                ReadNext::ClientMessage(other) => {
-                    warn!(%peer, kind = other.kind(), "unexpected message on a control connection")
+
+                message = read_next(peer, &mut read) => {
+                    let message = match message {
+                        Ok(x) => x,
+                        Err(e) => {
+                            warn!(%e, "error");
+                            continue
+                        }
+                    };
+
+                    match message {
+                        ReadNext::Noop => continue,
+                        ReadNext::Close => break,
+                        ReadNext::ClientMessage(ClientMessage::Shutdown) => {
+                            info!(%peer, "control requested shutdown");
+                            self.ctx.shutdown.notify_one();
+                            break;
+                        }
+                        ReadNext::ClientMessage(ClientMessage::SwapActive(id)) => {
+                            let outcome = match self.ctx.sessions.set_current(Some(id)).await {
+                                Ok(Some(id)) => Ok(Some(id.0)),
+                                Ok(None) => Ok(None::<u32>),
+                                Err(e) => Err(e),
+                            };
+                            let id = id.0;
+                            info!(%peer, id, ?outcome, "control swap");
+                        }
+                        ReadNext::ClientMessage(ClientMessage::ListSessions) => {
+                            let sessions = self.ctx.sessions.holder.read().await.list();
+                            write
+                                .send(ServerMessage::Sessions(sessions).try_into()?)
+                                .await?;
+                        }
+                        ReadNext::ClientMessage(ClientMessage::SetSecurity { id, level }) => {
+                            let found = self
+                                .ctx
+                                .sessions
+                                .holder
+                                .read()
+                                .await
+                                .find(id)
+                                .map(|session| session.security_level.store(level, Ordering::Relaxed))
+                                .is_some();
+                            info!(%peer, id = id.0, level, found, "control set security");
+                        }
+                        ReadNext::Ping(data) => {
+                            write.send(Message::Pong(data)).await?;
+                        }
+                        ReadNext::ClientMessage(other) => {
+                            warn!(%peer, kind = other.kind(), "unexpected message on a control connection")
+                        }
+                    }
                 }
             }
         }
@@ -320,6 +374,19 @@ impl Server {
         query.split('&').any(|pair| {
             let mut parts = pair.splitn(2, '=');
             matches!((parts.next(), parts.next()), (Some("control"), Some("1")))
+        })
+    }
+
+    /// The `security=<level>` ordinal a client requested at connect, if valid.
+    fn query_security(query: &str) -> Option<u8> {
+        query.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some("security"), Some(name)) => {
+                    crate::SecurityLevel::parse(name).map(|l| l.ordinal())
+                }
+                _ => None,
+            }
         })
     }
 

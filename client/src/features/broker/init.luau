@@ -30,6 +30,7 @@ export type Config = {
     scope: Instance?,
     verde: boolean?,
     luauLsp: boolean?,
+    securityLevel: string?,
 }
 export type BrokerData = {
     _trove: Trove.Trove,
@@ -146,6 +147,11 @@ function Broker._attempt(self: Broker)
     end
 
     local url = `ws://{host}:{port}/?token={token}`
+    local securityLevel = self._config.securityLevel
+    if securityLevel then
+        url ..= `&security={securityLevel}`
+    end
+
     local ok, ws = pcall(WebSocketClient.new, url)
     if not ok or not ws then
         Logger:Debug("broker", `connection failed: {ws}`)

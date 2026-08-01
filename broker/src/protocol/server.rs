@@ -25,6 +25,12 @@ pub enum ServerMessage {
     Operation { id: u32, op: Operation },
     /// Answer to [`super::ClientMessage::ListSessions`] (only sent to control connections): the connected sessions and which one is active.
     Sessions(Vec<SessionInfo>),
+
+
+    /// CONTROL: A new session was added.
+    NewSession(SessionId),
+    /// CONTROL: A session has been removed.
+    RemoveSession(SessionId),
 }
 
 /// One connected client session as reported to the `sessions` command.
@@ -33,6 +39,7 @@ pub struct SessionInfo {
     pub id: SessionId,
     pub peer: String,
     pub active: bool,
+    pub security_level: u8,
 }
 
 impl ServerMessage {

@@ -47,9 +47,16 @@ fn print_sessions(sessions: &[SessionInfo]) {
         println!("no clients connected");
         return;
     }
-    println!("  {:<4} {:<24} STATUS", "ID", "PEER");
+
+    println!("  {:<4} {:<24} {:<8} SECURITY", "ID", "PEER", "STATUS");
+
     for session in sessions {
         let status = if session.active { "active" } else { "standby" };
-        println!("  {:<4} {:<24} {status}", session.id, session.peer);
+        let security = crate::SecurityLevel::from_ordinal(session.security_level).as_str();
+
+        println!(
+            "  {:<4} {:<24} {status:<8} {security}",
+            session.id.0, session.peer
+        );
     }
 }

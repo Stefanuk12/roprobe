@@ -26,6 +26,8 @@ pub enum ClientMessage {
     SwapActive(SessionId),
     /// Control-only: ask for the connected-session list (sent by the `sessions` command), answered with a [`super::ServerMessage::Sessions`].
     ListSessions,
+    /// Control-only: set a session's property write-security ordinal (sent by the `security` command).
+    SetSecurity { id: SessionId, level: u8 },
 }
 
 impl ClientMessage {
@@ -49,6 +51,7 @@ impl ClientMessage {
             ClientMessage::RequestActive => "request-active",
             ClientMessage::SwapActive(..) => "swap-active",
             ClientMessage::ListSessions => "list-sessions",
+            ClientMessage::SetSecurity { .. } => "set-security",
         }
     }
 }

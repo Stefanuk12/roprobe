@@ -1,4 +1,5 @@
 mod run;
+mod security;
 mod sessions;
 mod status;
 mod stop;
@@ -20,6 +21,7 @@ pub async fn dispatch(cli: Cli) -> CommandResult {
         Some(Command::Stop(args)) => stop::stop(args).await,
         Some(Command::Sessions) => sessions::sessions().await,
         Some(Command::Swap(args)) => swap::swap(SessionId(args.id)).await,
+        Some(Command::Security(args)) => security::security(SessionId(args.id), args.level).await,
     }
 }
 

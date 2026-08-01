@@ -36,7 +36,7 @@ pub struct Session {
     write: WsWrite,
 
     pub mirror: Arc<Mirror>,
-    pub security_level: AtomicU8,
+    pub security_level: Arc<AtomicU8>,
     pending: HashMap<u32, oneshot::Sender<OpResult>>,
     next_op_id: u32,
 }
@@ -54,7 +54,7 @@ impl Session {
         Self {
             ctx,
             mirror,
-            security_level: security_level.into(),
+            security_level: Arc::new(security_level.into()),
             peer,
             write,
             id,
@@ -164,7 +164,9 @@ impl Session {
                 let _ = self.ctx.sessions.set_current(Some(self.id)).await;
             }
             // Control-only messages have no meaning on a syncing connection.
-            ClientMessage::SwapActive(..) | ClientMessage::ListSessions => {
+            ClientMessage::SwapActive(..)
+            | ClientMessage::ListSessions
+            | ClientMessage::SetSecurity { .. } => {
                 warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }

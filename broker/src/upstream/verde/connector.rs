@@ -91,7 +91,7 @@ impl VerdeConnector {
     async fn run_connection(&self, ws: VerdeStream) -> WsResult {
         let (write, mut read) = ws.split();
         let sessions = &self.ctx.sessions;
-        let mut conn = Connection::new(write, 8);
+        let mut conn = Connection::new(write);
 
         // Rebuilt whenever the active session changes.
         let mut current = sessions.subscribe_current().await;
@@ -120,13 +120,14 @@ impl VerdeConnector {
                 continue;
             };
 
-            // Grab the current session's mirror.
-            let Some(mirror) = ({
-                sessions
-                    .read()
-                    .await
-                    .current()
-                    .map(|session| Arc::clone(&session.mirror))
+            // Grab the current session's mirror and its live security threshold.
+            let Some((mirror, security_level)) = ({
+                sessions.read().await.current().map(|session| {
+                    (
+                        Arc::clone(&session.mirror),
+                        Arc::clone(&session.security_level),
+                    )
+                })
             }) else {
                 if current.changed().await.is_err() {
                     return Ok(());
@@ -135,6 +136,7 @@ impl VerdeConnector {
             };
 
             // Serve this connection until it switches or the socket dies.
+            conn.set_security_level(security_level);
             conn.greet(snapshot).await?;
             match conn
                 .serve(&mirror, &mut changed, &mut current, &mut read)

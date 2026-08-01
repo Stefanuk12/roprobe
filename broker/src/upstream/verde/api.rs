@@ -87,9 +87,8 @@ pub fn property_meta(class: &str, property: &str) -> Option<PropMeta> {
 
 #[cfg(test)]
 mod tests {
-    use crate::SecurityLevel;
-
     use super::*;
+    use crate::SecurityLevel;
 
     #[test]
     fn resolves_inherited_properties_and_read_only() {

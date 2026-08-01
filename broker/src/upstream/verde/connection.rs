@@ -1,4 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+    time::Duration,
+};
 
 use futures_util::{
     FutureExt as _, SinkExt as _, StreamExt as _, future::BoxFuture, stream::FuturesUnordered,
@@ -46,7 +52,7 @@ pub struct Connection {
     write: VerdeSink,
     tree: TreeState,
     flush_at: Option<Instant>,
-    security_level: u8,
+    security_level: Arc<AtomicU8>,
 
     // Some tasks can take a while and bottleneck the loop + select! loop, so we use these instead
     ops: FuturesUnordered<OperationTask>,
@@ -54,15 +60,20 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(write: VerdeSink, security_level: u8) -> Self {
+    pub fn new(write: VerdeSink) -> Self {
         Self {
             write,
             tree: TreeState::default(),
             flush_at: None,
-            security_level,
+            security_level: Arc::new(AtomicU8::new(0)),
             ops: FuturesUnordered::new(),
             searches: FuturesUnordered::new(),
         }
+    }
+
+    /// Point at the now-active session's live security threshold.
+    pub fn set_security_level(&mut self, level: Arc<AtomicU8>) {
+        self.security_level = level;
     }
 
     /// Initialise the sesion, wiping any previous session, then sending a roots snapshot to Verde.
@@ -259,7 +270,7 @@ impl Connection {
                     Arc::clone(mirror),
                     operation_id,
                     translate::to_operation(&operation),
-                    self.security_level,
+                    self.security_level.load(Ordering::Relaxed),
                 ));
             }
 

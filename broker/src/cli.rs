@@ -29,12 +29,23 @@ pub enum Command {
     Sessions,
     /// Switch which connected client is syncing (find ids with `sessions`).
     Swap(SwapArgs),
+    /// Set a session's property security level (find ids with `sessions`).
+    Security(SecurityArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct SwapArgs {
     /// Id of the session to make active (from `sessions`).
     pub id: u32,
+}
+
+#[derive(Debug, Args)]
+pub struct SecurityArgs {
+    /// Id of the session to change (from `sessions`).
+    pub id: u32,
+    /// The write-security tier to apply.
+    #[arg(value_enum)]
+    pub level: SecurityLevel,
 }
 
 #[derive(Debug, Args)]
@@ -122,5 +133,40 @@ impl SecurityLevel {
             SecurityLevel::RobloxScript => 3,
             SecurityLevel::Roblox => 4,
         }
+    }
+
+    /// The tier for an ordinal, saturating at the highest for anything above it.
+    pub fn from_ordinal(ordinal: u8) -> Self {
+        match ordinal {
+            0 => SecurityLevel::None,
+            1 => SecurityLevel::Plugin,
+            2 => SecurityLevel::LocalUser,
+            3 => SecurityLevel::RobloxScript,
+            _ => SecurityLevel::Roblox,
+        }
+    }
+
+    /// The tier's flag/query spelling (kebab-case), e.g. `roblox-script`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SecurityLevel::None => "none",
+            SecurityLevel::Plugin => "plugin",
+            SecurityLevel::LocalUser => "local-user",
+            SecurityLevel::RobloxScript => "roblox-script",
+            SecurityLevel::Roblox => "roblox",
+        }
+    }
+
+    /// Parse a tier from its [`SecurityLevel::as_str`] spelling.
+    pub fn parse(name: &str) -> Option<Self> {
+        [
+            SecurityLevel::None,
+            SecurityLevel::Plugin,
+            SecurityLevel::LocalUser,
+            SecurityLevel::RobloxScript,
+            SecurityLevel::Roblox,
+        ]
+        .into_iter()
+        .find(|level| level.as_str() == name)
     }
 }

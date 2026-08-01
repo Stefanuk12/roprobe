@@ -1,4 +1,5 @@
-use std::{ops::Deref, sync::Arc, time::Duration};
+use std::{ops::Deref, sync::{Arc, atomic::Ordering}, time::Duration};
+
 use tokio::sync::{RwLock, broadcast, watch};
 
 use crate::{
@@ -72,6 +73,7 @@ impl SessionsHolder {
                 id: s.id,
                 peer: s.peer.to_string(),
                 active: *self.current.borrow() == Some(s.id),
+                security_level: s.security_level.load(Ordering::Relaxed),
             })
             .collect()
     }
@@ -101,9 +103,17 @@ impl SessionsHolder {
 }
 
 /// A cloneable wrapper of the session store ([`SessionsHolder`]).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Sessions {
     pub holder: Arc<RwLock<SessionsHolder>>,
+    on_session_added: Arc<broadcast::Sender<SessionId>>,
+    on_session_removed: Arc<broadcast::Sender<SessionId>>,
+}
+
+impl Default for Sessions {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
 }
 
 impl Sessions {
@@ -111,6 +121,8 @@ impl Sessions {
     pub fn new(holder: SessionsHolder) -> Self {
         Self {
             holder: Arc::new(RwLock::new(holder)),
+            on_session_added: Arc::new(broadcast::channel(16).0),
+            on_session_removed: Arc::new(broadcast::channel(16).0),
         }
     }
 
@@ -159,6 +171,25 @@ impl Sessions {
         let mirror = holder.current()?.mirror.clone();
         drop(holder);
         mirror.wait_population(timeout, 0).await
+    }
+
+    pub async fn insert(&self, session: Session) {
+        let id = session.id;
+        self.holder.write().await.insert(session);
+        let _ = self.on_session_added.send(id);
+    }
+
+    pub async fn remove(&self, id: SessionId) {
+        self.holder.write().await.remove(id);
+        let _ = self.on_session_removed.send(id);
+    }
+
+    pub fn subscribe_session_added(&self) -> broadcast::Receiver<SessionId> {
+        self.on_session_added.subscribe()
+    }
+
+    pub fn subscribe_session_removed(&self) -> broadcast::Receiver<SessionId> {
+        self.on_session_removed.subscribe()
     }
 }
 

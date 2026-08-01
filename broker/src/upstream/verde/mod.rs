@@ -5,10 +5,9 @@ mod protocol;
 mod serialize;
 mod translate;
 pub(crate) mod tree_state;
-pub use connector::*;
-
 use std::{sync::Arc, time::Duration};
 
+pub use connector::*;
 use tokio::{sync::oneshot, time::timeout};
 
 use self::protocol::Outbound;
