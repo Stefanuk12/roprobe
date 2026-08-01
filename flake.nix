@@ -26,15 +26,18 @@
         devShells.default = pkgs.mkShell {
           inherit name;
 
-          packages = [
+          packages = with pkgs; [
             pesde.packages.${system}.default
 
-            pkgs.mise
-            pkgs.rustc
-            pkgs.cargo
-            pkgs.gcc
-            pkgs.openssl
-            pkgs.pkg-config
+            mise
+            rustc
+            cargo
+            gcc
+            openssl
+            pkg-config
+            
+            nodejs
+            pnpm
           ];
 
           shellHook = ''

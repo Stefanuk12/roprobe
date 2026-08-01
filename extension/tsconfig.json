@@ -1,13 +1,13 @@
 {
 	"compilerOptions": {
-		"module": "Node16",
+		"module": "NodeNext",
 		"target": "ES2022",
 		"lib": [
 			"ES2022"
 		],
 		"sourceMap": true,
 		"rootDir": "src",
-		"moduleResolution": "Node16",
+		"moduleResolution": "NodeNext",
 		"types": ["node", "vscode", "mocha"],
 		"strict": true,   /* enable all strict type-checking options */
 		/* Additional Checks */
