@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { decodeServer, encodeClient, type ClientMessage, type ServerMessage } from "./message";
+import { ExectionChannelHandler } from "../execution_channel_handler";
 
 interface BrokerHandshake {
     port: number;
@@ -39,14 +40,17 @@ export class BrokerManager implements vscode.Disposable {
     private spawnedHere = false;
     private disposed = false;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
-    private readonly log: vscode.OutputChannel;
+    private readonly log: vscode.LogOutputChannel;
+
+    executionChannels;
 
     private readonly _onMessage = new vscode.EventEmitter<ServerMessage>();
     /// Fires for every decoded message the broker sends.
     readonly onMessage = this._onMessage.event;
 
-    constructor(private readonly ctx: vscode.ExtensionContext) {
-        this.log = vscode.window.createOutputChannel("roprobe");
+    constructor(private readonly ctx: vscode.ExtensionContext, log: vscode.LogOutputChannel) {
+        this.log = log;
+        this.executionChannels = new ExectionChannelHandler(ctx);
     }
 
     /// Attach or spawn a broker.
@@ -61,19 +65,25 @@ export class BrokerManager implements vscode.Disposable {
             try {
                 await this.connect(existing.port, existing.token);
                 this.spawnedHere = false;
-                this.log.appendLine(`Attached to existing broker on :${existing.port}`);
-                return;
+                this.log.info(`Attached to existing broker on :${existing.port}`);
             } catch (err) {
-                this.log.appendLine(`Could not attach to lockfile broker (${String(err)}); spawning a new one`);
+                this.log.error(`Could not attach to lockfile broker (${String(err)}); spawning a new one`);
                 this.removeLockfile();
             }
         }
 
-        // There isn't, make a new one.
-        const handshake = await this.spawnAndHandshake();
-        await this.connect(handshake.port, handshake.token);
-        this.spawnedHere = true;
-        this.log.appendLine(`Spawned broker (pid ${this.child?.pid}) on :${handshake.port}`);
+        // There isn't one (or it was stale), make a new one.
+        if (!this.ws) {
+            const handshake = await this.spawnAndHandshake();
+            await this.connect(handshake.port, handshake.token);
+
+            this.spawnedHere = this.readLockfile()?.pid === this.child?.pid;
+            const owner = this.spawnedHere ? `Spawned broker (pid ${this.child?.pid})` : "Attached to broker already running";
+            this.log.info(`${owner} on :${handshake.port}`);
+        }
+
+        // Grab all current sessions
+        this.send({ type: "ListSessions" });
     }
 
     /// Send a message to the broker.
@@ -83,7 +93,7 @@ export class BrokerManager implements vscode.Disposable {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(encodeClient(message));
         } else {
-            this.log.appendLine(`Dropping ${message.type}: broker not connected`);
+            this.log.warn(`Dropping ${message.type}: broker not connected`);
         }
     }
 
@@ -117,8 +127,8 @@ export class BrokerManager implements vscode.Disposable {
             return Promise.reject(new Error(`failed to launch broker at ${bin}: ${String(err)}`));
         }
         this.child = child;
-        child.stderr?.on("data", (d: Buffer) => this.log.append(`[broker] ${d}`));
-        child.on("exit", (code, signal) => this.log.appendLine(`Broker exited (code=${code}, signal=${signal})`));
+        child.stderr?.on("data", (d: Buffer) => this.log.error(`[broker] ${d}`));
+        child.on("exit", (code, signal) => this.log.info(`Broker exited (code=${code}, signal=${signal})`));
 
         return new Promise<BrokerHandshake>((resolve, reject) => {
             let buf = "";
@@ -144,7 +154,7 @@ export class BrokerManager implements vscode.Disposable {
                     buf = buf.slice(nl + 1);
                     if (!line.startsWith("{")) {
                         if (line) {
-                            this.log.appendLine(`[broker] ${line}`);
+                            this.log.debug(`[broker] ${line}`);
                         }
                         continue;
                     }
@@ -153,7 +163,7 @@ export class BrokerManager implements vscode.Disposable {
                         if (typeof hs.port === "number" && typeof hs.token === "string") {
                             child.stdout?.off("data", onData);
                             // Forward any further stdout to the log.
-                            child.stdout?.on("data", (d: Buffer) => this.log.append(`[broker] ${d}`));
+                            child.stdout?.on("data", (d: Buffer) => this.log.debug(`[broker] ${d}`));
                             finish(() => resolve(hs));
                             return;
                         }
@@ -171,7 +181,7 @@ export class BrokerManager implements vscode.Disposable {
 
     private connect(port: number, token: string): Promise<void> {
         // The standard WebSocket client API can't set headers, so auth rides in the query string.
-        const url = `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
+        const url = `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}&control=1`;
         return new Promise<void>((resolve, reject) => {
             const ws = new WebSocket(url);
             const timer = setTimeout(() => {
@@ -188,10 +198,10 @@ export class BrokerManager implements vscode.Disposable {
                 () => {
                     clearTimeout(timer);
                     this.ws = ws;
-                    this.log.appendLine("Broker connection open");
+                    this.log.info("Broker connection open");
                     ws.addEventListener("message", (ev: MessageEvent) => this.receive(ev.data));
                     ws.addEventListener("close", () => {
-                        this.log.appendLine("Broker connection closed");
+                        this.log.info("Broker connection closed");
                         this.ws = undefined;
                         this.scheduleReconnect();
                     });
@@ -215,7 +225,7 @@ export class BrokerManager implements vscode.Disposable {
     private receive(data: unknown): void {
         // The broker only ever sends base64 text frames — the executor's socket rejects binary ones.
         if (typeof data !== "string") {
-            this.log.appendLine(`Dropping non-text frame (${typeof data})`);
+            this.log.warn(`Dropping non-text frame (${typeof data})`);
             return;
         }
 
@@ -223,7 +233,7 @@ export class BrokerManager implements vscode.Disposable {
         try {
             message = decodeServer(data);
         } catch (err) {
-            this.log.appendLine(`Dropping undecodable frame: ${String(err)}`);
+            this.log.warn(`Dropping undecodable frame: ${String(err)}`);
             return;
         }
 
@@ -237,7 +247,7 @@ export class BrokerManager implements vscode.Disposable {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined;
             this.start().catch((err) => {
-                this.log.appendLine(`Reconnect failed: ${String(err)}`);
+                this.log.error(`Reconnect failed: ${String(err)}`);
                 this.scheduleReconnect();
             });
         }, RECONNECT_DELAY_MS);
@@ -264,11 +274,12 @@ export class BrokerManager implements vscode.Disposable {
     private readLockfile(): BrokerHandshake | undefined {
         try {
             const hs = JSON.parse(fs.readFileSync(LOCKFILE, "utf8")) as BrokerHandshake;
+            this.log.info(JSON.stringify(hs));
             if (typeof hs.port === "number" && typeof hs.token === "string") {
                 return hs;
             }
         } catch {
-            // missing or malformed
+            this.log.debug("no lockfile");
         }
         return undefined;
     }

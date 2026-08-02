@@ -1,9 +1,17 @@
-use broker::{Cli, Result, commands, logging};
+use std::process::ExitCode;
+
+use broker::{Cli, commands, logging};
 use clap::Parser;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
     logging::init(cli.verbose);
-    commands::dispatch(cli).await
+
+    if let Err(e) = commands::dispatch(cli).await {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
+
+    ExitCode::SUCCESS
 }

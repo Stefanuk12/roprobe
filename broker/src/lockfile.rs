@@ -43,7 +43,12 @@ impl Lockfile {
         Ok(path)
     }
 
+    /// Remove the lockfile, unless a newer broker has since claimed it.
     pub fn remove(&self) {
+        if Self::read().is_some_and(|current| current.pid != self.pid) {
+            return;
+        }
+
         let _ = std::fs::remove_file(Self::path());
     }
 }
@@ -54,11 +59,5 @@ impl From<Handshake> for Lockfile {
             handshake,
             pid: process::id(),
         }
-    }
-}
-
-impl Drop for Lockfile {
-    fn drop(&mut self) {
-        self.remove();
     }
 }

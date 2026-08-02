@@ -11,6 +11,11 @@ pub enum Error {
 
     #[error("lockfile not found")]
     LockfileNotFound,
+
+    #[error(
+        "a broker is already running on port {port} (pid {pid}); stop it first to bind elsewhere"
+    )]
+    BrokerAlreadyRunning { port: u16, pid: u32 },
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;

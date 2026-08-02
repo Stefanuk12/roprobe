@@ -8,7 +8,7 @@ use crate::{lockfile::Lockfile, server::manager::Sessions, upstream::Controls};
 #[derive(Clone, Debug)]
 pub struct Context {
     pub sessions: Sessions,
-    pub lockfile: Lockfile,
+    pub lockfile: Arc<Lockfile>,
     pub controls: Controls,
     pub shutdown: Arc<Notify>,
 }
@@ -16,7 +16,7 @@ pub struct Context {
 impl Context {
     pub fn new(
         sessions: Sessions,
-        lockfile: Lockfile,
+        lockfile: Arc<Lockfile>,
         controls: Controls,
         shutdown: Arc<Notify>,
     ) -> Self {
