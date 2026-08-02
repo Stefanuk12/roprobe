@@ -37,7 +37,8 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:protocol": "node protocol-tests.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.109.0",
@@ -50,5 +51,8 @@
     "typescript": "^5.9.3",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
+  },
+  "dependencies": {
+    "squash-ts": "link:../../squash-ts"
   }
 }

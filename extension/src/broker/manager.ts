@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { decodeServer, encodeClient, type ClientMessage, type ServerMessage } from "./message";
 
 interface BrokerHandshake {
     port: number;
@@ -40,7 +41,8 @@ export class BrokerManager implements vscode.Disposable {
     private reconnectTimer?: ReturnType<typeof setTimeout>;
     private readonly log: vscode.OutputChannel;
 
-    private readonly _onMessage = new vscode.EventEmitter<string>();
+    private readonly _onMessage = new vscode.EventEmitter<ServerMessage>();
+    /// Fires for every decoded message the broker sends.
     readonly onMessage = this._onMessage.event;
 
     constructor(private readonly ctx: vscode.ExtensionContext) {
@@ -74,14 +76,14 @@ export class BrokerManager implements vscode.Disposable {
         this.log.appendLine(`Spawned broker (pid ${this.child?.pid}) on :${handshake.port}`);
     }
 
-    /// Send text to the broker.
+    /// Send a message to the broker.
     ///
     /// NOTE: does nothing, if not connected.
-    send(data: string): void {
+    send(message: ClientMessage): void {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(data);
+            this.ws.send(encodeClient(message));
         } else {
-            this.log.appendLine("Dropping send: broker not connected");
+            this.log.appendLine(`Dropping ${message.type}: broker not connected`);
         }
     }
 
@@ -187,9 +189,7 @@ export class BrokerManager implements vscode.Disposable {
                     clearTimeout(timer);
                     this.ws = ws;
                     this.log.appendLine("Broker connection open");
-                    ws.addEventListener("message", (ev: MessageEvent) => {
-                        this._onMessage.fire(typeof ev.data === "string" ? ev.data : String(ev.data));
-                    });
+                    ws.addEventListener("message", (ev: MessageEvent) => this.receive(ev.data));
                     ws.addEventListener("close", () => {
                         this.log.appendLine("Broker connection closed");
                         this.ws = undefined;
@@ -209,6 +209,25 @@ export class BrokerManager implements vscode.Disposable {
                 { once: true },
             );
         });
+    }
+
+    /// Decode one inbound frame and fan it out, dropping (with a log line) anything malformed.
+    private receive(data: unknown): void {
+        // The broker only ever sends base64 text frames — the executor's socket rejects binary ones.
+        if (typeof data !== "string") {
+            this.log.appendLine(`Dropping non-text frame (${typeof data})`);
+            return;
+        }
+
+        let message: ServerMessage;
+        try {
+            message = decodeServer(data);
+        } catch (err) {
+            this.log.appendLine(`Dropping undecodable frame: ${String(err)}`);
+            return;
+        }
+
+        this._onMessage.fire(message);
     }
 
     private scheduleReconnect(): void {
