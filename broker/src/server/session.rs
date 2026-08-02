@@ -26,6 +26,17 @@ impl core::fmt::Display for SessionId {
     }
 }
 
+/// Follow-up work a [`Session::handle`] call defers to its caller, for anything
+/// that re-enters the sessions lock the caller is already holding.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
+#[must_use = "the caller must run this once it has released the sessions lock"]
+pub enum PostHandle {
+    #[default]
+    None,
+    /// Make this session the active (forwarded) one.
+    Activate(SessionId),
+}
+
 /// The broker's side of one accepted client connection.
 #[derive(Debug)]
 pub struct Session {
@@ -124,8 +135,8 @@ impl Session {
         self.send(ServerMessage::RequestNodes(ids)).await
     }
 
-    /// Processes a single decoded client message.
-    pub async fn handle(&mut self, message: ClientMessage) -> Result<()> {
+    /// Processes a single decoded client message, returning any [`PostHandle`] the caller must run once it has released the sessions lock.
+    pub async fn handle(&mut self, message: ClientMessage) -> Result<PostHandle> {
         debug!(peer = %self.peer, kind = message.kind(), "client message");
         match message {
             ClientMessage::Shutdown => {
@@ -159,9 +170,10 @@ impl Session {
                     warn!(peer = %self.peer, id, "operation result for an unknown id, dropping")
                 }
             },
+            // `set_current` takes the sessions lock our caller already holds, so it is deferred rather than awaited here.
             ClientMessage::RequestActive => {
                 info!(peer = %self.peer, id = self.id.0, "client requested the active slot");
-                let _ = self.ctx.sessions.set_current(Some(self.id)).await;
+                return Ok(PostHandle::Activate(self.id));
             }
             // Control-only messages have no meaning on a syncing connection.
             ClientMessage::SwapActive(..)
@@ -170,6 +182,6 @@ impl Session {
                 warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }
-        Ok(())
+        Ok(PostHandle::None)
     }
 }

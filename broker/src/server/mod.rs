@@ -27,6 +27,7 @@ use tracing::{error, info, warn};
 use crate::{
     Context, Result,
     protocol::{ClientMessage, ServerMessage, text_decode},
+    server::session::PostHandle,
 };
 
 pub mod manager;
@@ -229,8 +230,18 @@ impl Server {
                                 break Ok(())
                             };
 
-                            if let Err(e) = session.handle(message).await {
-                                break Err(e);
+                            let post = match session.handle(message).await {
+                                Ok(post) => post,
+                                Err(e) => break Err(e),
+                            };
+
+                            // Deferred work re-enters the sessions lock, so it only runs once ours is released.
+                            drop(guard);
+                            match post {
+                                PostHandle::None => {}
+                                PostHandle::Activate(id) => {
+                                    let _ = self.ctx.sessions.set_current(Some(id)).await;
+                                }
                             }
                         }
                     }
