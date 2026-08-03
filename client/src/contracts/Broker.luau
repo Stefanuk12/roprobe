@@ -2,8 +2,7 @@
 local squashEnum = require("@lib/squashEnum")
 
 -- Types
---- A reference to a mirrored instance by its stable per-session id (mirrors the
---- Rust `DomId`).
+--- A reference to a mirrored instance by its stable per-session id.
 export type DomId = string
 export type Upstream = "Verde" | "LuauLsp"
 export type UpstreamState = {
@@ -54,7 +53,6 @@ export type DomInstance = {
     parent: DomId?,
     class: string,
     name: string,
-    --- Whether the live instance has children, even if none are mirrored yet.
     hasChildren: boolean,
     properties: { [string]: DomValue },
     attributes: { [string]: DomValue },
@@ -101,6 +99,9 @@ export type OpResult =
     | squashEnum.EnumVariant<"Err", string>
     | squashEnum.EnumVariant<"Output", string>
 
+export type LogLevel = "print" | "info" | "warn" | "error"
+export type LogEntry = { level: LogLevel, content: string }
+
 export type EnumEntry = { name: string, value: number }
 export type EnumFamily = { name: string, items: { EnumEntry } }
 
@@ -112,8 +113,8 @@ export type ClientMessage =
     | squashEnum.EnumVariant<"UpdateDom", DomPatch>
     | squashEnum.EnumVariant<"EnumFamilies", { EnumFamily }>
     | squashEnum.EnumVariant<"OperationResult", OperationResponse>
-    --- Ask the broker to make this client the active (forwarded) session.
     | squashEnum.EnumVariant<"RequestActive">
+    | squashEnum.EnumVariant<"Log", { LogEntry }>
 export type SearchQuery = { from: DomId, query: string }
 export type ServerMessage =
     | squashEnum.EnumVariant<"Hello">

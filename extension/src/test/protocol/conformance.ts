@@ -64,7 +64,24 @@ describe("ClientMessage", () => {
     it("encodes unit variants as a single tag byte", () => {
         pin<ClientMessage>(clientMessage, { type: "Shutdown" }, [0]);
         pin<ClientMessage>(clientMessage, { type: "RequestActive" }, [5]);
-        pin<ClientMessage>(clientMessage, { type: "ListSessions" }, [7]);
+        pin<ClientMessage>(clientMessage, { type: "ListSessions" }, [8]);
+        pin<ClientMessage>(clientMessage, { type: "RequestLogs" }, [10]);
+    });
+
+    it("encodes a console batch", () => {
+        // Vec elements reversed with the VLQ count last; each entry is a plain
+        // struct written forward (level tag byte, then content).
+        pin<ClientMessage>(
+            clientMessage,
+            {
+                type: "Log",
+                content: [
+                    { level: "print", content: "a" },
+                    { level: "error", content: "b" },
+                ],
+            },
+            [3, b("b"), 1, 0, b("a"), 1, 2, 6],
+        );
     });
 
     it("reverses struct-variant fields", () => {
@@ -75,8 +92,8 @@ describe("ClientMessage", () => {
             [0, 1, 0, 0, 0, 4],
         );
         // SessionId is a newtype over u32.
-        pin<ClientMessage>(clientMessage, { type: "SwapActive", content: 7 }, [7, 0, 0, 0, 6]);
-        pin<ClientMessage>(clientMessage, { type: "SetSecurity", content: { id: 7, level: 3 } }, [3, 7, 0, 0, 0, 8]);
+        pin<ClientMessage>(clientMessage, { type: "SwapActive", content: 7 }, [7, 0, 0, 0, 7]);
+        pin<ClientMessage>(clientMessage, { type: "SetSecurity", content: { id: 7, level: 3 } }, [3, 7, 0, 0, 0, 9]);
     });
 
     it("encodes the enum catalog", () => {
@@ -266,6 +283,11 @@ describe("ServerMessage", () => {
             "Sessions",
             { type: "Sessions", content: [{ id: 7, peer: "p", active: true, securityLevel: 3 }] },
             [7, 0, 0, 0, b("p"), 1, 1, 3, 1, 8],
+        ],
+        [
+            "SessionLog",
+            { type: "SessionLog", content: { id: 7, entries: [{ level: "warn", content: "a" }] } },
+            [2, b("a"), 1, 1, 7, 0, 0, 0, 11],
         ],
     ];
 

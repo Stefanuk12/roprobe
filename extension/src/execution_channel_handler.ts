@@ -1,10 +1,5 @@
 import * as vscode from "vscode";
-
-type LogLevel = "print" | "info" | "warn" | "error";
-interface LogEntry {
-  level: LogLevel;
-  content: string;
-}
+import type { LogEntry } from "./broker/message";
 
 export class ExecutionChannel implements vscode.Disposable {
   private disposed: boolean = false;
@@ -38,7 +33,7 @@ export class ExecutionChannel implements vscode.Disposable {
     const log = this.log;
     switch (entry.level) {
       case "print":
-        log.debug(entry.content);
+        log.info(entry.content);
         break;
       case "info":
         log.info(entry.content);
@@ -99,10 +94,12 @@ export class ExectionChannelHandler implements vscode.Disposable {
   }
 
   removeChannel(id: string): boolean {
-    if (!this.channels.has(id)) {
+    const channel = this.channels.get(id);
+    if (!channel) {
       return false;
     }
 
+    channel.dispose();
     this.channels.delete(id);
 
     if (this.selectedChannel === id) {
@@ -124,8 +121,7 @@ export class ExectionChannelHandler implements vscode.Disposable {
   }
 
   append(id: string, entry: LogEntry) {
-    const log = this.addChannel(id);
-    log.append(entry);
+    this.channels.get(id)?.append(entry);
   }
 
   refresh() {

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { after, before, describe, it } from "node:test";
 import {
@@ -179,8 +180,15 @@ describe(
         before(async () => {
             child = spawn(binary!, ["run", "--no-verde", "--no-luau-lsp", "--handshake=stdout"], {
                 stdio: ["ignore", "pipe", "pipe"],
-                // The assertions below read the broker's own decode logging.
-                env: { ...process.env, RUST_LOG: "debug" },
+                env: {
+                    ...process.env,
+                    // The assertions below read the broker's own decode logging.
+                    RUST_LOG: "debug",
+                    // The lockfile lives under the temp dir, so a private one keeps
+                    // this broker from attaching to a developer's running instance
+                    // (which would leave the assertions reading the wrong stderr).
+                    TMPDIR: fs.mkdtempSync(path.join(os.tmpdir(), "roprobe-test-")),
+                },
             });
             child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
 
@@ -311,6 +319,47 @@ describe(
             const info = listed.content.find((session) => session.id === sessionId);
             assert.equal(info?.active, true);
             assert.equal(info?.securityLevel, 3);
+        });
+
+        it("relays a console batch to the control connection", async () => {
+            client.send({
+                type: "Log",
+                content: [
+                    { level: "print", content: "hello" },
+                    { level: "error", content: "boom" },
+                ],
+            });
+
+            const relayed = await control.next("SessionLog");
+            assert.deepEqual(relayed, {
+                type: "SessionLog",
+                content: {
+                    id: sessionId,
+                    entries: [
+                        { level: "print", content: "hello" },
+                        { level: "error", content: "boom" },
+                    ],
+                },
+            });
+        });
+
+        it("replays the console history only when asked", async () => {
+            // Nothing arrives unbidden: the live batch above was the last push.
+            control.send({ type: "ListSessions" });
+            assert.equal((await control.next("Sessions")).type, "Sessions");
+
+            control.send({ type: "RequestLogs" });
+            const replayed = await control.next("SessionLog");
+            assert.deepEqual(replayed, {
+                type: "SessionLog",
+                content: {
+                    id: sessionId,
+                    entries: [
+                        { level: "print", content: "hello" },
+                        { level: "error", content: "boom" },
+                    ],
+                },
+            });
         });
 
         it("announces the removal when the client disconnects", async () => {

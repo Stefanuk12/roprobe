@@ -5,6 +5,7 @@ client/Packages
 client/dist
 client/roblox.d.luau
 client/.meta/sourcemap.json
+client/.meta/types
 
 .direnv
 

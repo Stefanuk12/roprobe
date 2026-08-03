@@ -3,7 +3,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{server::SessionId, upstream::Upstream};
 
-use super::{DomPatch, EnumFamily, OpResult};
+use super::{DomPatch, EnumFamily, LogEntry, OpResult};
 
 /// Contains all the possible inbound events from a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,12 +22,20 @@ pub enum ClientMessage {
     OperationResult { id: u32, result: OpResult },
     /// Ask the broker to make *this* client the active (forwarded) session.
     RequestActive,
-    /// Control-only: make the session with the given id active (sent by the `swap` command, not the Luau client).
+    /// A batch of the client's console output, relayed on to the control connections.
+    Log(Vec<LogEntry>),
+
+    // Control messages //
+
+    /// Control-only: make the session with the given id active.
     SwapActive(SessionId),
-    /// Control-only: ask for the connected-session list (sent by the `sessions` command), answered with a [`super::ServerMessage::Sessions`].
+    /// Control-only: ask for the connected-session list, answered with a [`super::ServerMessage::Sessions`].
     ListSessions,
-    /// Control-only: set a session's property write-security ordinal (sent by the `security` command).
+    /// Control-only: set a session's property write-security ordinal.
     SetSecurity { id: SessionId, level: u8 },
+    /// Control-only: ask for the buffered console history, answered with one
+    /// [`super::ServerMessage::SessionLog`] per run of lines.
+    RequestLogs,
 }
 
 impl ClientMessage {
@@ -49,9 +57,11 @@ impl ClientMessage {
             ClientMessage::EnumFamilies(..) => "enum-families",
             ClientMessage::OperationResult { .. } => "operation-result",
             ClientMessage::RequestActive => "request-active",
+            ClientMessage::Log(..) => "log",
             ClientMessage::SwapActive(..) => "swap-active",
             ClientMessage::ListSessions => "list-sessions",
             ClientMessage::SetSecurity { .. } => "set-security",
+            ClientMessage::RequestLogs => "request-logs",
         }
     }
 }
@@ -97,6 +107,62 @@ mod tests {
         assert!(matches!(
             ClientMessage::from_bytes(bytes).unwrap(),
             ClientMessage::RequestActive
+        ));
+    }
+
+    /// Pins [`ClientMessage::Log`] at tag 6, ahead of the control-only variants:
+    /// the Luau client mirrors the tags up to this one, so it must stay put.
+    #[test]
+    fn log_round_trips_and_is_pinned() {
+        use crate::protocol::{LogEntry, LogLevel};
+
+        let msg = ClientMessage::Log(vec![
+            LogEntry {
+                level: LogLevel::Print,
+                content: "a".into(),
+            },
+            LogEntry {
+                level: LogLevel::Error,
+                content: "b".into(),
+            },
+        ]);
+        // Vec elements reversed with the VLQ count last; each entry is a plain
+        // struct written forward (level tag byte, then content).
+        #[rustfmt::skip]
+        let expected = vec![
+            3, b'b', 1,         // entries[1]: LogLevel::Error, "b"
+            0, b'a', 1,         // entries[0]: LogLevel::Print, "a"
+            2,                  // entries VLQ count
+            6,                  // ClientMessage tag (Log)
+        ];
+        assert_eq!(msg.to_bytes().unwrap(), expected);
+
+        let ClientMessage::Log(entries) = ClientMessage::from_bytes(expected).unwrap() else {
+            panic!("decoded a different variant");
+        };
+        assert_eq!(
+            entries,
+            vec![
+                LogEntry {
+                    level: LogLevel::Print,
+                    content: "a".into()
+                },
+                LogEntry {
+                    level: LogLevel::Error,
+                    content: "b".into()
+                },
+            ]
+        );
+    }
+
+    /// Pins the control-only tags after [`ClientMessage::Log`], which the extension mirrors.
+    #[test]
+    fn control_only_tags_are_pinned() {
+        assert_eq!(ClientMessage::ListSessions.to_bytes().unwrap(), [0x08]);
+        assert_eq!(ClientMessage::RequestLogs.to_bytes().unwrap(), [0x0a]);
+        assert!(matches!(
+            ClientMessage::from_bytes(vec![0x0a]).unwrap(),
+            ClientMessage::RequestLogs
         ));
     }
 

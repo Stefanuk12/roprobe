@@ -214,7 +214,7 @@ local contentValue: Squash.SerDes<any> = {
     end,
 }
 local domValue: Squash.SerDes<DomValue> = squashEnum({
-    { type = "Bool" :: "Bool", content = Squash.T(boolean) },
+    { type = "Bool" :: "Bool", content = Squash.T(boolean) } :: any,
     { type = "Float" :: "Float", content = Squash.T(f64) },
     { type = "Int" :: "Int", content = Squash.T(i64) },
     { type = "String" :: "String", content = Squash.T(str) },

@@ -21,15 +21,18 @@
     "/vendor/**"
   ],
   "luau-lsp.fflags.enableNewSolver": true,
+  "luau-lsp.fflags.override": {
+    "LuauSolverV2": "true"
+  },
   "luau-lsp.types.definitionFiles": {
-    "@custom": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/environment.d.luau",
-    "@luarmor": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luarmor.d.luau",
-    "@luraph": "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/types/luraph.d.luau"
+    "@custom": "./client/.meta/types/environment.d.luau",
+    "@luarmor": "./client/.meta/types/luarmor.d.luau",
+    "@luraph": "./client/.meta/types/luraph.d.luau"
   },
   "luau-lsp.types.documentationFiles": [
-    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/environment.d.json",
-    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luarmor.d.json",
-    "./client/luau_packages/.pesde/stefanuk12+luau_defs/0.2.4/luau_defs/docs/luraph.d.json"
+    "./client/.meta/types/environment.d.json",
+    "./client/.meta/types/luarmor.d.json",
+    "./client/.meta/types/luraph.d.json"
   ],
   "selene.configPath": "./client/.meta/selene.toml",
   "stylua.configPath": "./client/.meta/stylua.toml",
@@ -82,6 +85,6 @@
     "out": true,
     "dist": true
   },
-  "typescript.tsc.autoDetect": "off",
+  "js/ts.tsc.autoDetect": "off",
   "stylua.targetReleaseVersion": "latest"
 }

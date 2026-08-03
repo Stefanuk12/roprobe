@@ -23,7 +23,14 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(broker);
   context.subscriptions.push(
     broker.onMessage((message) => {
-      log.info(`got message ${JSON.stringify(message)}`);
+      if (message.type === "SessionLog") {
+        log.info(
+          `session ${message.content.id} relayed ${message.content.entries.length} console line(s)`,
+        );
+      } else {
+        log.info(`got message ${JSON.stringify(message)}`);
+      }
+
       switch (message.type) {
         case "NewSession":
           broker?.executionChannels.addChannel(message.content.toString());
@@ -34,6 +41,14 @@ export async function activate(context: vscode.ExtensionContext) {
         case "Sessions":
           for (const session of message.content) {
             broker?.executionChannels.addChannel(session.id.toString());
+          }
+          break;
+        case "SessionLog":
+          for (const entry of message.content.entries) {
+            broker?.executionChannels.append(
+              message.content.id.toString(),
+              entry,
+            );
           }
           break;
       }

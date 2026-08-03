@@ -1,4 +1,5 @@
 -- Dependencies
+local ConsoleRelay = require("@features/consoleRelay")
 local DomSync = require("@features/broker/DomSync")
 local DomWatch = require("@features/broker/DomWatch")
 local Logger = require("@engine/Logger")
@@ -328,6 +329,18 @@ function Broker._onHello(self: Broker)
     for upstream, enabled in self._upstreams do
         self:_send({ type = "SetUpstream" :: "SetUpstream", content = { upstream = upstream, enabled = enabled } })
     end
+
+    -- Relay console output only while connected.
+    local console = self._connectionTrove:Add(ConsoleRelay.new())
+    self._connectionTrove:Add(
+        console.onBatch:Connect(function(entries: { Messages.LogEntry })
+            local count = #entries
+            Logger:Debug("broker", `relaying {count} console line(s)`)
+            self:_send({ type = "Log" :: "Log", content = entries })
+        end),
+        "Disconnect"
+    )
+    console:Initialise()
 
     local watch = self._connectionTrove:Add(DomWatch.new(self._sync, self._config.scope, self._config.lazy))
     self._watch = watch

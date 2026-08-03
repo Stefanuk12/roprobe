@@ -82,8 +82,9 @@ export class BrokerManager implements vscode.Disposable {
             this.log.info(`${owner} on :${handshake.port}`);
         }
 
-        // Grab all current sessions
+        // Grab all current sessions with any relevant data
         this.send({ type: "ListSessions" });
+        this.send({ type: "RequestLogs" });
     }
 
     /// Send a message to the broker.
@@ -122,7 +123,7 @@ export class BrokerManager implements vscode.Disposable {
         const bin = brokerBinaryPath(this.ctx);
         let child: ChildProcess;
         try {
-            child = spawn(bin, ["--handshake=stdout"], { stdio: ["ignore", "pipe", "pipe"] });
+            child = spawn(bin, ["-v", "--handshake=stdout"], { stdio: ["ignore", "pipe", "pipe"] });
         } catch (err) {
             return Promise.reject(new Error(`failed to launch broker at ${bin}: ${String(err)}`));
         }
@@ -142,7 +143,11 @@ export class BrokerManager implements vscode.Disposable {
                 fn();
             };
             const timer = setTimeout(
-                () => finish(() => reject(new Error("timed out waiting for broker handshake on stdout"))),
+                () =>
+                    finish(() => {
+                        child.kill();
+                        reject(new Error("timed out waiting for broker handshake on stdout"));
+                    }),
                 HANDSHAKE_TIMEOUT_MS,
             );
 

@@ -22,7 +22,7 @@ use tokio_tungstenite::{
         http::{Response as HttpResponse, StatusCode},
     },
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     Context, Result,
@@ -287,6 +287,7 @@ impl Server {
         let (mut write, mut read) = ws.split();
         let mut on_session_added = self.ctx.sessions.subscribe_session_added();
         let mut on_session_removed = self.ctx.sessions.subscribe_session_removed();
+        let mut on_log = self.ctx.sessions.subscribe_log();
 
         loop {
             tokio::select! {
@@ -311,6 +312,18 @@ impl Server {
                     };
 
                     write.send(ServerMessage::RemoveSession(remove_session).try_into()?).await?;
+                }
+                relayed = on_log.recv() => {
+                    let (id, entries) = match relayed {
+                        Ok(x) => x,
+                        Err(e) => {
+                            warn!(%e, "console relay dropped");
+                            continue
+                        }
+                    };
+
+                    debug!(%peer, id = id.0, lines = entries.len(), "forwarding console batch");
+                    write.send(ServerMessage::SessionLog { id, entries }.try_into()?).await?;
                 }
 
                 message = read_next(peer, &mut read) => {
@@ -344,6 +357,14 @@ impl Server {
                             write
                                 .send(ServerMessage::Sessions(sessions).try_into()?)
                                 .await?;
+                        }
+                        ReadNext::ClientMessage(ClientMessage::RequestLogs) => {
+                            let batches = self.ctx.sessions.log_history();
+                            let lines: usize = batches.iter().map(|(_, entries)| entries.len()).sum();
+                            for (id, entries) in batches {
+                                write.send(ServerMessage::SessionLog { id, entries }.try_into()?).await?;
+                            }
+                            info!(%peer, lines, "replayed console history");
                         }
                         ReadNext::ClientMessage(ClientMessage::SetSecurity { id, level }) => {
                             let found = self

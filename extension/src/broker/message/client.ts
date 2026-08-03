@@ -1,6 +1,7 @@
 import type { SerDes } from "squash-ts";
 import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
 import { domPatch, type DomPatch } from "./dom";
+import { logEntries, type LogEntry } from "./log";
 import { enumFamilies, opResult, type EnumFamily, type OpResult } from "./operation";
 import { taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
@@ -31,12 +32,19 @@ export type ClientMessage =
     | { type: "OperationResult"; content: OperationResponse }
     /** Ask the broker to make *this* client the active (forwarded) session. */
     | { type: "RequestActive" }
+    /** A batch of the client's console output, relayed on to the control connections. */
+    | { type: "Log"; content: LogEntry[] }
+    
+    /** Control messages */
+    
     /** Control-only: make the session with the given id active. */
     | { type: "SwapActive"; content: SessionId }
     /** Control-only: ask for the connected-session list, answered with a `ServerMessage::Sessions`. */
     | { type: "ListSessions" }
     /** Control-only: set a session's property write-security ordinal. */
-    | { type: "SetSecurity"; content: SecurityChange };
+    | { type: "SetSecurity"; content: SecurityChange }
+    /** Control-only: ask for the buffered console history, answered with one `SessionLog` per run of lines. */
+    | { type: "RequestLogs" };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationResponse: SerDes<OperationResponse> = {
@@ -72,9 +80,11 @@ export const clientMessage: SerDes<ClientMessage> = taggedUnion<ClientMessage>([
     { type: "EnumFamilies", content: enumFamilies },
     { type: "OperationResult", content: operationResponse },
     { type: "RequestActive" },
+    { type: "Log", content: logEntries },
     { type: "SwapActive", content: u32 },
     { type: "ListSessions" },
     { type: "SetSecurity", content: securityChange },
+    { type: "RequestLogs" },
 ]);
 
 /** Encode a [`ClientMessage`] into a base64 text frame for the broker. */

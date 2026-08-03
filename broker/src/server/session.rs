@@ -170,6 +170,10 @@ impl Session {
                     warn!(peer = %self.peer, id, "operation result for an unknown id, dropping")
                 }
             },
+            ClientMessage::Log(entries) => {
+                debug!(peer = %self.peer, count = entries.len(), "client console batch");
+                self.ctx.sessions.broadcast_log(self.id, entries);
+            }
             // `set_current` takes the sessions lock our caller already holds, so it is deferred rather than awaited here.
             ClientMessage::RequestActive => {
                 info!(peer = %self.peer, id = self.id.0, "client requested the active slot");
@@ -178,7 +182,8 @@ impl Session {
             // Control-only messages have no meaning on a syncing connection.
             ClientMessage::SwapActive(..)
             | ClientMessage::ListSessions
-            | ClientMessage::SetSecurity { .. } => {
+            | ClientMessage::SetSecurity { .. }
+            | ClientMessage::RequestLogs => {
                 warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }

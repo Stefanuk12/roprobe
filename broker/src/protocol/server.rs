@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{DomId, Operation};
+use super::{DomId, LogEntry, Operation};
 use crate::{server::SessionId, upstream::Upstream};
 
 /// Contains all the possible outbound events to a client.
@@ -26,11 +26,17 @@ pub enum ServerMessage {
     /// Answer to [`super::ClientMessage::ListSessions`] (only sent to control connections): the connected sessions and which one is active.
     Sessions(Vec<SessionInfo>),
 
+    // Control messages //
 
     /// CONTROL: A new session was added.
     NewSession(SessionId),
     /// CONTROL: A session has been removed.
     RemoveSession(SessionId),
+    /// CONTROL: A batch of console output relayed from the session with the given id.
+    SessionLog {
+        id: SessionId,
+        entries: Vec<LogEntry>,
+    },
 }
 
 /// One connected client session as reported to the `sessions` command.
@@ -116,6 +122,27 @@ mod tests {
                 .to_bytes()
                 .unwrap(),
             vec![b'b', 1, b'a', 1, 2, 6],
+        );
+    }
+
+    /// Pins [`ServerMessage::SessionLog`]'s frame: a struct variant, so `entries`
+    /// lands before `id` with tag 11 last.
+    #[test]
+    fn session_log_wire_layout_is_pinned() {
+        use crate::protocol::{LogEntry, LogLevel};
+
+        assert_eq!(
+            (ServerMessage::SessionLog {
+                id: SessionId(7),
+                entries: vec![LogEntry {
+                    level: LogLevel::Warn,
+                    content: "a".into()
+                }],
+            })
+            .to_bytes()
+            .unwrap(),
+            // entry (level tag 2, then "a"), entries VLQ count, id (u32 LE), tag.
+            vec![2, b'a', 1, 1, 7, 0, 0, 0, 11],
         );
     }
 

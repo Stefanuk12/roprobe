@@ -1,11 +1,20 @@
-use std::{ops::Deref, sync::{Arc, atomic::Ordering}, time::Duration};
+use std::{
+    collections::VecDeque,
+    ops::Deref,
+    sync::{Arc, Mutex, atomic::Ordering},
+    time::Duration,
+};
 
 use tokio::sync::{RwLock, broadcast, watch};
+use tracing::debug;
 
 use crate::{
-    protocol::SessionInfo,
+    protocol::{LogEntry, SessionInfo},
     server::{DomChange, Session, SessionDom, SessionId},
 };
+
+const LOG_BUFFER: usize = 256;
+const LOG_HISTORY: usize = 1_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -108,6 +117,8 @@ pub struct Sessions {
     pub holder: Arc<RwLock<SessionsHolder>>,
     on_session_added: Arc<broadcast::Sender<SessionId>>,
     on_session_removed: Arc<broadcast::Sender<SessionId>>,
+    on_log: Arc<broadcast::Sender<(SessionId, Vec<LogEntry>)>>,
+    history: Arc<Mutex<VecDeque<(SessionId, LogEntry)>>>,
 }
 
 impl Default for Sessions {
@@ -123,6 +134,8 @@ impl Sessions {
             holder: Arc::new(RwLock::new(holder)),
             on_session_added: Arc::new(broadcast::channel(16).0),
             on_session_removed: Arc::new(broadcast::channel(16).0),
+            on_log: Arc::new(broadcast::channel(LOG_BUFFER).0),
+            history: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_HISTORY))),
         }
     }
 
@@ -182,6 +195,46 @@ impl Sessions {
     pub async fn remove(&self, id: SessionId) {
         self.holder.write().await.remove(id);
         let _ = self.on_session_removed.send(id);
+    }
+
+    /// Fan one session's console batch out to the control connections.
+    pub fn broadcast_log(&self, id: SessionId, entries: Vec<LogEntry>) {
+        let lines = entries.len();
+
+        {
+            let mut history = self.history.lock().expect("log history poisoned");
+    
+            for entry in &entries {
+                if history.len() == LOG_HISTORY {
+                    history.pop_front();
+                }
+    
+                history.push_back((id, entry.clone()));
+            }
+        }
+
+        match self.on_log.send((id, entries)) {
+            Ok(controls) => debug!(id = id.0, lines, controls, "console batch broadcast"),
+            Err(_) => debug!(id = id.0, lines, "console batch dropped, no control connection"),
+        }
+    }
+
+    pub fn subscribe_log(&self) -> broadcast::Receiver<(SessionId, Vec<LogEntry>)> {
+        self.on_log.subscribe()
+    }
+
+    /// All of the past console logs for each session, in ascending order.
+    pub fn log_history(&self) -> Vec<(SessionId, Vec<LogEntry>)> {
+        let history = self.history.lock().expect("log history poisoned");
+
+        let mut batches: Vec<(SessionId, Vec<LogEntry>)> = Vec::new();
+        for (id, entry) in history.iter() {
+            match batches.last_mut() {
+                Some((last, entries)) if last == id => entries.push(entry.clone()),
+                _ => batches.push((*id, vec![entry.clone()])),
+            }
+        }
+        batches
     }
 
     pub fn subscribe_session_added(&self) -> broadcast::Receiver<SessionId> {

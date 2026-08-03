@@ -38,6 +38,13 @@ run = "stylua {{ vars.stylua_args }} --check -- src"
 description = "Download Roblox type definitions"
 run = "curl -fsSL https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.d.lua -o ./roblox.d.luau"
 
+[tasks.executor-types]
+description = "Stage the executor type definitions, migrating them to luau-lsp's current syntax"
+depends = ["deps"]
+run = "lune run .meta/scripts/executor-types"
+sources = ["luau_packages/.pesde/stefanuk12+luau_defs/**"]
+outputs = [".meta/types/*"]
+
 [tasks.sourcemap]
 description = "Generate sourcemap via rojo (paths re-rooted to the monorepo root)"
 depends = ["deps"]
@@ -47,13 +54,25 @@ outputs = [".meta/sourcemap.json"]
 
 [tasks.check]
 description = "Check the source via luau-lsp"
-depends = ["deps", "fetch-types"]
-run = "luau-lsp analyze --settings .vscode/settings.json --definitions \"@roblox=./roblox.d.luau\" --ignore /roblox_packages/** src"
+depends = ["deps", "fetch-types", "executor-types"]
+run = """
+luau-lsp analyze --no-flags-enabled --flag:LuauSolverV2=true --platform roblox \
+    --definitions "@roblox=./roblox.d.luau" \
+    --definitions "@custom=./.meta/types/environment.d.luau" \
+    --definitions "@luarmor=./.meta/types/luarmor.d.luau" \
+    --definitions "@luraph=./.meta/types/luraph.d.luau" \
+    --ignore "**/roblox_packages/**" src
+"""
 
 [tasks.build]
 description = "Build the script via darklua (no args = build main)"
 depends = ["deps"]
 run = "lune run .meta/scripts/build"
+
+[tasks.test]
+description = "Run the end-to-end tests: the client's source, sandboxed under lune, against a real broker"
+depends = ["deps"]
+run = "lune run .meta/scripts/test"
 
 [tasks.clean]
 description = "Remove build artifacts and downloaded packages"

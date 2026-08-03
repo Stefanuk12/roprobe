@@ -122,7 +122,7 @@ local renameAttributeContent: Squash.SerDes<{ node: string, old: string, new: st
 
 --- Mirrors `Operation`.
 local operation: Squash.SerDes<Operation> = squashEnum({
-    { type = "Rename" :: "Rename", content = Squash.T(nodeAnd("name")) },
+    { type = "Rename" :: "Rename", content = Squash.T(nodeAnd("name")) } :: any,
     { type = "Delete" :: "Delete", content = Squash.T(nodeOnly) },
     { type = "Move" :: "Move", content = Squash.T(moveContent) },
     { type = "Create" :: "Create", content = Squash.T(createContent) },

@@ -306,7 +306,7 @@ local function propertyNames(instance: Instance, requested: { string }?): { stri
     return {}
 end
 
-local function getProperties(context: Context, content: { node: string, properties: { string }? }): OpResult
+local function getProperties(context: Context, content: { node: string, properties: { string } }): OpResult
     local instance, failure = resolveNode(context, content.node)
     if not instance then
         return failure :: OpResult

@@ -1,5 +1,6 @@
 import type { SerDes } from "squash-ts";
 import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
+import { logEntries, type LogEntry } from "./log";
 import { operation, type Operation } from "./operation";
 import { boolean, optStr, serdeArray, str, strArray, taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
@@ -15,6 +16,12 @@ export interface OperationRequest {
 export interface SearchQuery {
     from: DomId;
     query: string;
+}
+
+/** Mirrors `SessionLog`'s `{ id, entries }` payload: console output relayed from one session. */
+export interface SessionLogBatch {
+    id: SessionId;
+    entries: LogEntry[];
 }
 
 /** One connected client session as reported to the `sessions` command. */
@@ -46,10 +53,15 @@ export type ServerMessage =
     | { type: "Operation"; content: OperationRequest }
     /** Answer to `ClientMessage::ListSessions` (control connections only). */
     | { type: "Sessions"; content: SessionInfo[] }
+    
+    /** Control messages */
+    
     /** Control-only: a new session was added. */
     | { type: "NewSession"; content: SessionId }
     /** Control-only: a session was removed. */
-    | { type: "RemoveSession"; content: SessionId };
+    | { type: "RemoveSession"; content: SessionId }
+    /** Control-only: a batch of console output relayed from the given session. */
+    | { type: "SessionLog"; content: SessionLogBatch };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationRequest: SerDes<OperationRequest> = {
@@ -74,6 +86,19 @@ const searchQuery: SerDes<SearchQuery> = {
     des(cursor) {
         const from = str.des(cursor);
         return { from, query: str.des(cursor) };
+    },
+};
+
+/** A struct variant, so the fields land on the wire reversed. */
+const sessionLogBatch: SerDes<SessionLogBatch> = {
+    ser(cursor, batch) {
+        logEntries.ser(cursor, batch.entries);
+        u32.ser(cursor, batch.id);
+    },
+
+    des(cursor) {
+        const id = u32.des(cursor);
+        return { id, entries: logEntries.des(cursor) };
     },
 };
 
@@ -108,6 +133,7 @@ export const serverMessage: SerDes<ServerMessage> = taggedUnion<ServerMessage>([
     { type: "Sessions", content: serdeArray(sessionInfo) },
     { type: "NewSession", content: u32 },
     { type: "RemoveSession", content: u32 },
+    { type: "SessionLog", content: sessionLogBatch },
 ]);
 
 /** Decode a base64 text frame from the broker, throwing on a malformed or unknown frame. */

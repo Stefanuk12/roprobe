@@ -5,3 +5,6 @@ local exec = require("./helpers/exec")
 exec("lune", { "setup" })
 exec("pesde", { "install" })
 exec("mise", { "install-darklua" })
+
+-- The editor points at the staged copies, which are generated and gitignored.
+exec("mise", { "run", "executor-types" })

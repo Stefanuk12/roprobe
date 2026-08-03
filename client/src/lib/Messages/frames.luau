@@ -4,6 +4,7 @@ local Squash = require("@pkgs/squash")
 local dom = require("@lib/Messages/dom")
 local operations = require("@lib/Messages/operations")
 local primitives = require("@lib/Messages/primitives")
+local serdeArray = require("@lib/serdeArray")
 local squashEnum = require("@lib/squashEnum")
 
 -- Primitives
@@ -23,6 +24,8 @@ local opResult = operations.opResult
 
 -- Types
 type ClientMessage = Broker.ClientMessage
+type LogEntry = Broker.LogEntry
+type LogLevel = Broker.LogLevel
 type OperationRequest = Broker.OperationRequest
 type OperationResponse = Broker.OperationResponse
 type ServerMessage = Broker.ServerMessage
@@ -41,7 +44,7 @@ local upstreamState: Squash.SerDes<UpstreamState> = {
     des = function(cursor)
         local up = upstream.des(cursor)
         local enabled = boolean.des(cursor)
-        return { upstream = up, enabled = enabled }
+        return { upstream = up, enabled = enabled } :: UpstreamState
     end,
 }
 
@@ -73,6 +76,25 @@ local operationResponse: Squash.SerDes<OperationResponse> = {
     end,
 }
 
+--- Mirrors `LogLevel`.
+local logLevel: Squash.SerDes<LogLevel> = Squash.literal("print", "info", "warn", "error")
+
+--- Mirrors `LogEntry`, a plain struct: `ser` runs forward and `des` in reverse.
+local logEntry: Squash.SerDes<LogEntry> = {
+    ser = function(cursor, entry)
+        logLevel.ser(cursor, entry.level)
+        str.ser(cursor, entry.content)
+    end,
+
+    des = function(cursor)
+        local content = str.des(cursor)
+        local level = logLevel.des(cursor)
+        return { level = level, content = content } :: LogEntry
+    end,
+}
+
+local logEntries = serdeArray(logEntry)
+
 --- Mirrors `ClientMessage`.
 local clientMessage: Squash.SerDes<ClientMessage> = squashEnum({
     { type = "Shutdown" :: "Shutdown" } :: any,
@@ -81,6 +103,7 @@ local clientMessage: Squash.SerDes<ClientMessage> = squashEnum({
     { type = "EnumFamilies" :: "EnumFamilies", content = Squash.T(enumFamilies) },
     { type = "OperationResult" :: "OperationResult", content = Squash.T(operationResponse) },
     { type = "RequestActive" :: "RequestActive" } :: any,
+    { type = "Log" :: "Log", content = Squash.T(logEntries) },
 })
 
 --- Mirrors `Search`'s `{ from, query }` payload.
