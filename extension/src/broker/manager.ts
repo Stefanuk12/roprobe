@@ -12,12 +12,43 @@ interface BrokerHandshake {
     pid?: number;
 }
 
+interface BrokerConfig {
+    host: string;
+    port: number;
+    token?: string;
+}
+
 /** Cross-process runtime state, so a broker started elsewhere is discoverable. */
 const LOCKFILE = path.join(os.tmpdir(), "roprobe", "broker.json");
+
+const CONFIG_SECTION = "roprobe.broker";
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 const RECONNECT_DELAY_MS = 1_000;
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+function readConfig(): BrokerConfig {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const host = config.get<string>("host", "").trim();
+    const token = config.get<string>("token", "").trim();
+
+    return {
+        host: host || "127.0.0.1",
+        port: config.get<number>("port", 0),
+        token: token || undefined,
+    };
+}
+
+function isLocal(host: string): boolean {
+    return LOOPBACK_HOSTS.has(host.toLowerCase());
+}
+
+function brokerUrl(host: string, port: number, token: string): string {
+    const authority = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `ws://${authority}:${port}/?token=${encodeURIComponent(token)}&control=1`;
+}
 
 function brokerBinaryPath(ctx: vscode.ExtensionContext): string {
     const exe = process.platform === "win32" ? "broker.exe" : "broker";
@@ -40,6 +71,7 @@ export class BrokerManager implements vscode.Disposable {
     private spawnedHere = false;
     private disposed = false;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private readonly configWatcher: vscode.Disposable;
     private readonly log: vscode.LogOutputChannel;
 
     executionChannels;
@@ -51,6 +83,13 @@ export class BrokerManager implements vscode.Disposable {
     constructor(private readonly ctx: vscode.ExtensionContext, log: vscode.LogOutputChannel) {
         this.log = log;
         this.executionChannels = new ExectionChannelHandler(ctx);
+        this.configWatcher = vscode.workspace.onDidChangeConfiguration((ev) => {
+            if (!ev.affectsConfiguration(CONFIG_SECTION)) {
+                return;
+            }
+            this.log.info("Broker settings changed; reconnecting");
+            this.restart().catch((err) => this.log.error(`Reconnect after settings change failed: ${String(err)}`));
+        });
     }
 
     /// Attach or spawn a broker.
@@ -59,27 +98,11 @@ export class BrokerManager implements vscode.Disposable {
             return;
         }
 
-        // Check if there's a broker already via lockfile.
-        const existing = this.readLockfile();
-        if (existing) {
-            try {
-                await this.connect(existing.port, existing.token);
-                this.spawnedHere = false;
-                this.log.info(`Attached to existing broker on :${existing.port}`);
-            } catch (err) {
-                this.log.error(`Could not attach to lockfile broker (${String(err)}); spawning a new one`);
-                this.removeLockfile();
-            }
-        }
-
-        // There isn't one (or it was stale), make a new one.
-        if (!this.ws) {
-            const handshake = await this.spawnAndHandshake();
-            await this.connect(handshake.port, handshake.token);
-
-            this.spawnedHere = this.readLockfile()?.pid === this.child?.pid;
-            const owner = this.spawnedHere ? `Spawned broker (pid ${this.child?.pid})` : "Attached to broker already running";
-            this.log.info(`${owner} on :${handshake.port}`);
+        const config = readConfig();
+        if (isLocal(config.host)) {
+            await this.startLocal(config);
+        } else {
+            await this.attachRemote(config);
         }
 
         // Grab all current sessions with any relevant data
@@ -107,6 +130,7 @@ export class BrokerManager implements vscode.Disposable {
 
     dispose(): void {
         this.disposed = true;
+        this.configWatcher.dispose();
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = undefined;
@@ -119,11 +143,63 @@ export class BrokerManager implements vscode.Disposable {
         this.log.dispose();
     }
 
-    private spawnAndHandshake(): Promise<BrokerHandshake> {
+    /// Attach to the broker the lockfile advertises, or spawn one on the configured port.
+    private async startLocal(config: BrokerConfig): Promise<void> {
+        const existing = this.readLockfile();
+        const matchesConfig =
+            existing !== undefined &&
+            (config.port === 0 || existing.port === config.port) &&
+            (config.token === undefined || existing.token === config.token);
+
+        if (existing && !matchesConfig) {
+            this.log.warn(`Broker on :${existing.port} does not match the configured port/token; starting one that does`);
+        } else if (existing) {
+            try {
+                await this.connect(config.host, existing.port, existing.token);
+                this.spawnedHere = false;
+                this.log.info(`Attached to existing broker on ${config.host}:${existing.port}`);
+            } catch (err) {
+                this.log.error(`Could not attach to lockfile broker (${String(err)}); spawning a new one`);
+                this.removeLockfile();
+            }
+        }
+
+        if (!this.ws) {
+            const handshake = await this.spawnAndHandshake(config);
+            await this.connect(config.host, handshake.port, handshake.token);
+
+            this.spawnedHere = this.readLockfile()?.pid === this.child?.pid;
+            const owner = this.spawnedHere ? `Spawned broker (pid ${this.child?.pid})` : "Attached to broker already running";
+            this.log.info(`${owner} on ${config.host}:${handshake.port}`);
+        }
+    }
+
+    /// Attach to a broker running elsewhere.
+    private async attachRemote(config: BrokerConfig): Promise<void> {
+        if (config.port === 0 || !config.token) {
+            throw new Error(
+                `roprobe.broker.host is set to ${config.host}, so roprobe.broker.port and roprobe.broker.token must be set to match that broker`,
+            );
+        }
+
+        await this.connect(config.host, config.port, config.token);
+        this.spawnedHere = false;
+        this.log.info(`Attached to remote broker on ${config.host}:${config.port}`);
+    }
+
+    private spawnAndHandshake(config: BrokerConfig): Promise<BrokerHandshake> {
         const bin = brokerBinaryPath(this.ctx);
+        const args = ["run", "-v", "--handshake=stdout"];
+        if (config.port !== 0) {
+            args.push("--port", String(config.port));
+        }
+        if (config.token) {
+            args.push("--token", config.token);
+        }
+
         let child: ChildProcess;
         try {
-            child = spawn(bin, ["-v", "--handshake=stdout"], { stdio: ["ignore", "pipe", "pipe"] });
+            child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
         } catch (err) {
             return Promise.reject(new Error(`failed to launch broker at ${bin}: ${String(err)}`));
         }
@@ -184,11 +260,9 @@ export class BrokerManager implements vscode.Disposable {
         });
     }
 
-    private connect(port: number, token: string): Promise<void> {
-        // The standard WebSocket client API can't set headers, so auth rides in the query string.
-        const url = `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}&control=1`;
+    private connect(host: string, port: number, token: string): Promise<void> {
         return new Promise<void>((resolve, reject) => {
-            const ws = new WebSocket(url);
+            const ws = new WebSocket(brokerUrl(host, port, token));
             const timer = setTimeout(() => {
                 reject(new Error("connection timed out"));
                 try {

@@ -23,7 +23,29 @@
         "title": "Restart Broker",
         "category": "roprobe"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "roprobe",
+      "properties": {
+        "roprobe.broker.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "markdownDescription": "Host the extension talks to the broker on. A loopback host (`127.0.0.1`, `localhost`, `::1`) lets the extension spawn and manage a local broker; anything else attaches to a broker someone else is running, and needs `#roprobe.broker.port#` and `#roprobe.broker.token#` set to match it."
+        },
+        "roprobe.broker.port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 0,
+          "markdownDescription": "Port the broker listens on. `0` lets it pick a free port on startup; pin one to keep the port stable across restarts. Required when `#roprobe.broker.host#` is remote."
+        },
+        "roprobe.broker.token": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Auth token the broker accepts. Empty mints a fresh one per broker startup, which the extension reads back from the local broker's lockfile. Required when `#roprobe.broker.host#` is remote."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
