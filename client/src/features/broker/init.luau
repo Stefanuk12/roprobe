@@ -10,6 +10,7 @@ local WebSocketClient = require("@engine/WebSocketClient")
 
 -- Services
 local HttpService = cloneref(game:GetService("HttpService"))
+local Players = cloneref(game:GetService("Players"))
 
 --- Default path to the broker handshake lockfile (port + auth token).
 local DEFAULT_LOCKFILE = "roprobe/broker.json"
@@ -26,6 +27,8 @@ export type Config = {
     token: string?,
     lockfile: string?,
     retryInterval: number?,
+
+    username: string?,
 
     lazy: boolean?,
     scope: Instance?,
@@ -83,6 +86,19 @@ local function resolveEndpoint(config: Config): (string?, number?, string?)
         return host, port, token
     end
     return nil, nil, nil
+end
+
+--- The account this client is playing on.
+local function resolvePlayerName(config: Config): string?
+    if config.username then
+        return config.username
+    end
+
+    local player = Players.LocalPlayer
+    if player then
+        return player.Name
+    end
+    return nil
 end
 
 --- Create a new [`Broker`] object; nothing connects until [`Broker.Start`].
@@ -153,6 +169,11 @@ function Broker._attempt(self: Broker)
         url ..= `&security={securityLevel}`
     end
 
+    local username = resolvePlayerName(self._config)
+    if username then
+        url ..= `&username={HttpService:UrlEncode(username)}`
+    end
+
     local ok, ws = pcall(WebSocketClient.new, url)
     if not ok or not ws then
         Logger:Debug("broker", `connection failed: {ws}`)
@@ -216,12 +237,23 @@ function Broker._dispatch(self: Broker, message: Messages.ServerMessage)
         self:_onRequestNodes(message.content)
     elseif message.type == "Operation" then
         self:_onOperation(message.content)
+    else
+        Logger:Warn("broker", `unhandled message {message.type}`)
     end
 end
 
 --- Perform an operation like changing Dom / running code
 function Broker._onOperation(self: Broker, content: Messages.OperationRequest)
+    Logger:Debug("broker", `operation {content.id}: {content.op.type}`)
+
     local result = Operations.dispatch({ sync = self._sync, watch = self._watch }, content.op)
+    if result.type == "Err" then
+        local summary = result.content:split("\n")[1]
+        Logger:Error("broker", `operation {content.id} ({content.op.type}) failed: {summary}`)
+    else
+        Logger:Debug("broker", `operation {content.id} ({content.op.type}) -> {result.type}`)
+    end
+
     self:_send({ type = "OperationResult" :: "OperationResult", content = { id = content.id, result = result } })
 end
 

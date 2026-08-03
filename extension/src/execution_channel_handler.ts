@@ -5,9 +5,9 @@ export class ExecutionChannel implements vscode.Disposable {
   private disposed: boolean = false;
   private log: vscode.LogOutputChannel;
 
-  constructor(id: string) {
+  constructor(name: string) {
     this.log = vscode.window.createOutputChannel(
-      `roprobe - output redirection (${id})`,
+      `roprobe - output redirection (${name})`,
       { log: true },
     );
   }
@@ -76,13 +76,17 @@ export class ExectionChannelHandler implements vscode.Disposable {
     return;
   }
 
-  addChannel(id: string): ExecutionChannel {
+  ids(): string[] {
+    return [...this.channels.keys()];
+  }
+
+  addChannel(id: string, name: string): ExecutionChannel {
     let channel = this.channels.get(id);
     if (channel) {
       return channel;
     }
 
-    channel = new ExecutionChannel(id);
+    channel = new ExecutionChannel(name);
     this.channels.set(id, channel);
 
     if (!this.selectedChannel) {
@@ -122,6 +126,10 @@ export class ExectionChannelHandler implements vscode.Disposable {
 
   append(id: string, entry: LogEntry) {
     this.channels.get(id)?.append(entry);
+  }
+
+  show(id: string) {
+    this.channels.get(id)?.show();
   }
 
   refresh() {

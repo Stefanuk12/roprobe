@@ -3,7 +3,7 @@ import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
 import { domPatch, type DomPatch } from "./dom";
 import { logEntries, type LogEntry } from "./log";
 import { enumFamilies, opResult, type EnumFamily, type OpResult } from "./operation";
-import { taggedUnion, u32, u8 } from "./serde";
+import { str, taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
 
 /** Mirrors `ClientMessage::OperationResult`'s `{ id, result }` payload. */
@@ -16,6 +16,13 @@ export interface OperationResponse {
 export interface SecurityChange {
     id: SessionId;
     level: number;
+}
+
+/** Mirrors `ClientMessage::RunCode`'s `{ session, request, source }` payload; `request` is ours to choose and comes back on the matching `ServerMessage::RunResult`. */
+export interface RunRequest {
+    session: SessionId;
+    request: number;
+    source: string;
 }
 
 /** Every inbound event the broker accepts from a client. */
@@ -44,7 +51,9 @@ export type ClientMessage =
     /** Control-only: set a session's property write-security ordinal. */
     | { type: "SetSecurity"; content: SecurityChange }
     /** Control-only: ask for the buffered console history, answered with one `SessionLog` per run of lines. */
-    | { type: "RequestLogs" };
+    | { type: "RequestLogs" }
+    /** Control-only: compile and run `source` on the given session, answered with a `ServerMessage::RunResult`. */
+    | { type: "RunCode"; content: RunRequest };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationResponse: SerDes<OperationResponse> = {
@@ -72,6 +81,21 @@ const securityChange: SerDes<SecurityChange> = {
     },
 };
 
+/** A struct variant, so the fields land on the wire reversed. */
+const runRequest: SerDes<RunRequest> = {
+    ser(cursor, value) {
+        str.ser(cursor, value.source);
+        u32.ser(cursor, value.request);
+        u32.ser(cursor, value.session);
+    },
+
+    des(cursor) {
+        const session = u32.des(cursor);
+        const request = u32.des(cursor);
+        return { session, request, source: str.des(cursor) };
+    },
+};
+
 /** Mirrors `ClientMessage`. */
 export const clientMessage: SerDes<ClientMessage> = taggedUnion<ClientMessage>([
     { type: "Shutdown" },
@@ -85,6 +109,7 @@ export const clientMessage: SerDes<ClientMessage> = taggedUnion<ClientMessage>([
     { type: "ListSessions" },
     { type: "SetSecurity", content: securityChange },
     { type: "RequestLogs" },
+    { type: "RunCode", content: runRequest },
 ]);
 
 /** Encode a [`ClientMessage`] into a base64 text frame for the broker. */

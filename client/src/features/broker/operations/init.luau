@@ -24,11 +24,11 @@ export type Context = {
 }
 
 -- Constants
---- Script bodies are large and meaningless in a property listing, so never read them.
 local SKIP_PROPERTIES: { [string]: true } = {
     Source = true,
     LinkedSource = true,
 }
+local RUN_CHUNK_NAME = "roprobe"
 
 --- Applies relayed DOM operations against the live game and reads it back, with the broker owning all upstream interpretation.
 local Operations = {}
@@ -40,6 +40,56 @@ local OK: OpResult = { type = "Ok" :: "Ok" }
 --- A failure result carrying an error code.
 local function err(code: string): OpResult
     return { type = "Err" :: "Err", content = code }
+end
+
+--- Format the error frame / stack trace properly with all of roprobe's stuff.
+local function formatFrame(level: number): string?
+    local source: string?, line: number?, name: string? = debug.info(level + 1, "sln")
+    if source == nil or source == "[C]" then
+        return nil
+    end
+
+    local at = source:match('^%[string "(.*)"%]$') or source
+    if at == "" then
+        at = RUN_CHUNK_NAME
+    end
+
+    if name ~= nil and name ~= "" then
+        return `Script '{at}', Line {line} - function {name}`
+    end
+    return `Script '{at}', Line {line}`
+end
+
+--- Build an `xpcall` handler reporting the error and the frames above `boundary` the roprobe function that called in. 
+local function tracebackTo(boundary: any): (any) -> string
+    return function(message: any): string
+        local frames: { string } = {}
+
+        -- 1 is this handler, so the throw sits at 2.
+        local level = 2
+        while true do
+            local frame: any = debug.info(level, "f")
+            if frame == nil or frame == boundary then
+                break
+            end
+
+            local formatted = formatFrame(level)
+            if formatted then
+                table.insert(frames, formatted)
+            end
+            level += 1
+        end
+
+        -- Luau prefixes its own errors with the wrapped chunk name; unwrap it so
+        -- the message and the frames name the script the same way.
+        local head = (tostring(message):gsub('%[string "(.-)"%]', "%1"))
+        if #frames == 0 then
+            return head
+        end
+
+        local stack = table.concat(frames, "\n")
+        return `{head}\nStack Begin\n{stack}\nStack End`
+    end
 end
 
 -- Value conversion ----------------------------------------------------------
@@ -335,9 +385,9 @@ local function getProperties(context: Context, content: { node: string, properti
     }
 end
 
---- Compile and run `source`, capturing its `print`/`warn` output and returned values as text, with any compile or runtime error becoming an `Err`.
+--- Compile and run `source`, capturing its `print`/`warn` output and returned values as text, with a compile error becoming an `Err` and a runtime one an `Err` carrying its stack trace.
 local function runCode(_context: Context, content: { source: string }): OpResult
-    local chunk, compileError = loadstring(content.source)
+    local chunk, compileError = loadstring(content.source, RUN_CHUNK_NAME)
     if not chunk then
         return err(tostring(compileError))
     end
@@ -358,7 +408,10 @@ local function runCode(_context: Context, content: { source: string }): OpResult
         setfenv(chunk, setmetatable({ print = capture, warn = capture }, { __index = base, __newindex = base }))
     end
 
-    local returned = table.pack(pcall(chunk))
+    -- `xpcall`, not `pcall`: the handler runs before the stack unwinds, so the
+    -- frames that raised the error are still there to walk. The trace stops here,
+    -- at the frame that called the chunk.
+    local returned = table.pack(xpcall(chunk, tracebackTo(runCode)))
     if not returned[1] then
         return err(tostring(returned[2]))
     end
@@ -400,9 +453,9 @@ local function apply(context: Context, operation: Operation): OpResult
     return err(`unsupported_operation:{(operation :: any).type}`)
 end
 
---- Apply `operation`, returning its typed [`OpResult`], with any handler error becoming an `Err` result rather than propagating.
+--- Apply `operation`, returning its typed [`OpResult`], with any handler error becoming an `Err` result carrying its stack trace rather than propagating.
 function Operations.dispatch(context: Context, operation: Operation): OpResult
-    local ok, result = pcall(apply, context, operation)
+    local ok, result = xpcall(apply, tracebackTo(Operations.dispatch), context, operation)
     if not ok then
         return err(tostring(result))
     end

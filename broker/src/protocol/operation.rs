@@ -58,6 +58,26 @@ pub enum Operation {
     },
 }
 
+impl Operation {
+    /// The variant's name, for logging an operation without dumping its payload.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Operation::Rename { .. } => "rename",
+            Operation::Delete { .. } => "delete",
+            Operation::Move { .. } => "move",
+            Operation::Create { .. } => "create",
+            Operation::AddTag { .. } => "add-tag",
+            Operation::RemoveTag { .. } => "remove-tag",
+            Operation::SetProperty { .. } => "set-property",
+            Operation::SetAttribute { .. } => "set-attribute",
+            Operation::RemoveAttribute { .. } => "remove-attribute",
+            Operation::RenameAttribute { .. } => "rename-attribute",
+            Operation::GetProperties { .. } => "get-properties",
+            Operation::RunCode { .. } => "run-code",
+        }
+    }
+}
+
 /// The outcome the client reports for a relayed [`Operation`].
 #[derive(Clone, PartialEq, PartialOrd, Debug, Serialize, Deserialize)]
 pub enum OpResult {
@@ -65,6 +85,18 @@ pub enum OpResult {
     Reads(Reads),
     Err(String),
     Output(String),
+}
+
+impl OpResult {
+    /// The variant's name, for logging an outcome without dumping its payload.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            OpResult::Ok => "ok",
+            OpResult::Reads(..) => "reads",
+            OpResult::Err(..) => "err",
+            OpResult::Output(..) => "output",
+        }
+    }
 }
 
 /// A node's raw properties, tags, and attributes.

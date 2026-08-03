@@ -1,7 +1,7 @@
 import type { SerDes } from "squash-ts";
 import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
 import { logEntries, type LogEntry } from "./log";
-import { operation, type Operation } from "./operation";
+import { operation, opResult, type Operation, type OpResult } from "./operation";
 import { boolean, optStr, serdeArray, str, strArray, taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
 import type { DomId } from "./variant";
@@ -24,12 +24,19 @@ export interface SessionLogBatch {
     entries: LogEntry[];
 }
 
+/** Mirrors `RunResult`'s `{ session, request, result }` payload: the outcome of a `ClientMessage::RunCode`, with the `request` id we chose echoed back. */
+export interface RunOutcome {
+    session: SessionId;
+    request: number;
+    result: OpResult;
+}
+
 /** One connected client session as reported to the `sessions` command. */
 export interface SessionInfo {
     id: SessionId;
+    username: string | undefined;
     peer: string;
     active: boolean;
-    /** The session's property write-security ordinal. */
     securityLevel: number;
 }
 
@@ -56,12 +63,14 @@ export type ServerMessage =
     
     /** Control messages */
     
-    /** Control-only: a new session was added. */
-    | { type: "NewSession"; content: SessionId }
+    /** Control-only: a new session was added, described in full so it can be named on sight. */
+    | { type: "NewSession"; content: SessionInfo }
     /** Control-only: a session was removed. */
     | { type: "RemoveSession"; content: SessionId }
     /** Control-only: a batch of console output relayed from the given session. */
-    | { type: "SessionLog"; content: SessionLogBatch };
+    | { type: "SessionLog"; content: SessionLogBatch }
+    /** Control-only: the outcome of a `ClientMessage::RunCode` we sent. */
+    | { type: "RunResult"; content: RunOutcome };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationRequest: SerDes<OperationRequest> = {
@@ -102,10 +111,26 @@ const sessionLogBatch: SerDes<SessionLogBatch> = {
     },
 };
 
+/** A struct variant, so the fields land on the wire reversed. */
+const runOutcome: SerDes<RunOutcome> = {
+    ser(cursor, value) {
+        opResult.ser(cursor, value.result);
+        u32.ser(cursor, value.request);
+        u32.ser(cursor, value.session);
+    },
+
+    des(cursor) {
+        const session = u32.des(cursor);
+        const request = u32.des(cursor);
+        return { session, request, result: opResult.des(cursor) };
+    },
+};
+
 /** A plain struct, so `ser` runs forward and `des` in reverse. `SessionId` is a newtype over `u32`. */
 const sessionInfo: SerDes<SessionInfo> = {
     ser(cursor, info) {
         u32.ser(cursor, info.id);
+        optStr.ser(cursor, info.username);
         str.ser(cursor, info.peer);
         boolean.ser(cursor, info.active);
         u8.ser(cursor, info.securityLevel);
@@ -115,8 +140,9 @@ const sessionInfo: SerDes<SessionInfo> = {
         const securityLevel = u8.des(cursor);
         const active = boolean.des(cursor);
         const peer = str.des(cursor);
+        const username = optStr.des(cursor);
         const id = u32.des(cursor);
-        return { id, peer, active, securityLevel };
+        return { id, username, peer, active, securityLevel };
     },
 };
 
@@ -131,9 +157,10 @@ export const serverMessage: SerDes<ServerMessage> = taggedUnion<ServerMessage>([
     { type: "RequestNodes", content: strArray },
     { type: "Operation", content: operationRequest },
     { type: "Sessions", content: serdeArray(sessionInfo) },
-    { type: "NewSession", content: u32 },
+    { type: "NewSession", content: sessionInfo },
     { type: "RemoveSession", content: u32 },
     { type: "SessionLog", content: sessionLogBatch },
+    { type: "RunResult", content: runOutcome },
 ]);
 
 /** Decode a base64 text frame from the broker, throwing on a malformed or unknown frame. */

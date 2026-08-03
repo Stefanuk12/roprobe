@@ -166,6 +166,7 @@ function everyDomValue(): Map<string, DomValue> {
 }
 
 const binary = brokerBinary();
+const PLAYER = "Builder Man";
 
 describe(
     "live broker",
@@ -208,7 +209,7 @@ describe(
             const base = `ws://127.0.0.1:${handshake.port}/?token=${encodeURIComponent(handshake.token)}`;
             // Control first, so it witnesses the syncing client joining.
             control = await TestClient.open(`${base}&control=1`);
-            client = await TestClient.open(base);
+            client = await TestClient.open(`${base}&username=${encodeURIComponent(PLAYER)}`);
         });
 
         after(async () => {
@@ -223,10 +224,18 @@ describe(
             assert.equal((await client.next("Hello")).type, "Hello");
         });
 
-        it("announces the new session on the control connection", async () => {
+        it("announces the new session, named, on the control connection", async () => {
             const added = await control.next("NewSession");
             assert.equal(added.type, "NewSession");
-            sessionId = added.type === "NewSession" ? added.content : -1;
+            if (added.type !== "NewSession") {
+                return;
+            }
+
+            sessionId = added.content.id;
+            // Named on sight: no `ListSessions` round trip stands between a client
+            // joining and the UI being able to name it.
+            assert.equal(added.content.username, PLAYER);
+            assert.ok(added.content.peer.startsWith("127.0.0.1"), added.content.peer);
         });
 
         it("round-trips SetUpstream through UpstreamChanged", async () => {
@@ -299,6 +308,7 @@ describe(
 
             const info = listed.content.find((session) => session.id === sessionId);
             assert.ok(info, `session ${sessionId} missing from ${JSON.stringify(listed.content)}`);
+            assert.equal(info.username, PLAYER);
             assert.ok(info.peer.startsWith("127.0.0.1"), info.peer);
             assert.equal(info.active, true);
             assert.equal(info.securityLevel, 2, "the LocalUser default");
@@ -360,6 +370,39 @@ describe(
                     ],
                 },
             });
+        });
+
+        it("runs code on a chosen session and answers the control connection", async () => {
+            control.send({ type: "RunCode", content: { session: sessionId, request: 42, source: "print('hi')" } });
+
+            const relayed = await client.next("Operation");
+            assert.equal(relayed.type, "Operation");
+            if (relayed.type !== "Operation") {
+                return;
+            }
+            assert.deepEqual(relayed.content.op, { type: "RunCode", content: { source: "print('hi')" } });
+
+            client.send({
+                type: "OperationResult",
+                content: { id: relayed.content.id, result: { type: "Output", content: "hi" } },
+            });
+
+            assert.deepEqual(await control.next("RunResult"), {
+                type: "RunResult",
+                content: { session: sessionId, request: 42, result: { type: "Output", content: "hi" } },
+            });
+        });
+
+        it("answers a run aimed at a session nobody is behind", async () => {
+            control.send({ type: "RunCode", content: { session: sessionId + 1, request: 43, source: "print('hi')" } });
+
+            const answered = await control.next("RunResult");
+            assert.equal(answered.type, "RunResult");
+            if (answered.type !== "RunResult") {
+                return;
+            }
+            assert.equal(answered.content.request, 43);
+            assert.equal(answered.content.result.type, "Err");
         });
 
         it("announces the removal when the client disconnects", async () => {

@@ -1,29 +1,80 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BrokerManager } from "./broker";
-import type { SessionId, ServerMessage } from "./broker/message";
+import { looksLikeLuau } from "./run";
+import { sessionLabel, type SessionRegistry } from "./sessions";
 
-/// Bottom-bar count of the game clients the broker currently has attached.
+const RUN_PRIORITY = 100.09;
+const SESSION_PRIORITY = 100.08;
+
+export class RunStatusItem implements vscode.Disposable {
+  private readonly item: vscode.StatusBarItem;
+  private readonly subscriptions: vscode.Disposable[] = [];
+
+  constructor(
+    private readonly broker: BrokerManager,
+    private readonly sessions: SessionRegistry,
+  ) {
+    this.item = vscode.window.createStatusBarItem(
+      "roprobe.run",
+      vscode.StatusBarAlignment.Right,
+      RUN_PRIORITY,
+    );
+    this.item.name = "roprobe run";
+    this.item.command = "roprobe.runActiveFile";
+
+    this.subscriptions.push(
+      sessions.onDidChange(() => this.render()),
+      broker.onConnectionChanged(() => this.render()),
+      vscode.window.onDidChangeActiveTextEditor(() => this.render()),
+    );
+
+    this.render();
+  }
+
+  dispose() {
+    for (const subscription of this.subscriptions) {
+      subscription.dispose();
+    }
+    this.item.dispose();
+  }
+
+  private render() {
+    const document = vscode.window.activeTextEditor?.document;
+    if (!this.broker.connected || !document || !looksLikeLuau(document)) {
+      this.item.hide();
+      return;
+    }
+
+    const name = document.isUntitled ? "the active buffer" : path.basename(document.fileName);
+    const target = this.sessions.target;
+    this.item.text = "$(run) Run";
+    this.item.tooltip = target
+      ? `roprobe: run ${name} on ${sessionLabel(target)} (${target.peer})`
+      : `roprobe: run ${name} — no clients are connected`;
+    this.item.show();
+  }
+}
+
 export class SessionStatusItem implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
   private readonly subscriptions: vscode.Disposable[] = [];
-  private readonly sessions = new Set<SessionId>();
 
-  constructor(broker: BrokerManager) {
+  constructor(
+    broker: BrokerManager,
+    private readonly sessions: SessionRegistry,
+  ) {
     this.item = vscode.window.createStatusBarItem(
       "roprobe.sessions",
       vscode.StatusBarAlignment.Right,
-      100,
+      SESSION_PRIORITY,
     );
     this.item.name = "roprobe clients";
+    this.item.command = "roprobe.selectClient";
 
     this.subscriptions.push(
-      broker.onMessage((message) => this.track(message)),
-      broker.onConnectionChanged((connected) => {
-        if (!connected) {
-          this.sessions.clear();
-        }
-        this.render(connected);
-      }),
+      sessions.onDidChange(() => this.render(broker.connected)),
+      broker.onConnectionChanged((connected) => this.render(connected)),
     );
 
     this.render(broker.connected);
@@ -37,27 +88,6 @@ export class SessionStatusItem implements vscode.Disposable {
     this.item.dispose();
   }
 
-  private track(message: ServerMessage) {
-    switch (message.type) {
-      case "Sessions":
-        this.sessions.clear();
-        for (const session of message.content) {
-          this.sessions.add(session.id);
-        }
-        break;
-      case "NewSession":
-        this.sessions.add(message.content);
-        break;
-      case "RemoveSession":
-        this.sessions.delete(message.content);
-        break;
-      default:
-        return;
-    }
-
-    this.render(true);
-  }
-
   private render(connected: boolean) {
     if (!connected) {
       this.item.text = "$(debug-disconnect) roprobe";
@@ -65,8 +95,16 @@ export class SessionStatusItem implements vscode.Disposable {
       return;
     }
 
-    const count = this.sessions.size;
-    this.item.text = `$(plug) roprobe ${count}`;
-    this.item.tooltip = count === 1 ? "roprobe: 1 client connected" : `roprobe: ${count} clients connected`;
+    const count = this.sessions.list().length;
+    const target = this.sessions.target;
+    if (!target) {
+      this.item.text = "$(plug) roprobe: no clients";
+      this.item.tooltip = "roprobe: connected to a broker, but no game client has joined";
+      return;
+    }
+
+    const others = count === 1 ? "the only client" : `one of ${count} clients`;
+    this.item.text = `$(vm-active) roprobe: ${sessionLabel(target)}`;
+    this.item.tooltip = `roprobe: running on ${sessionLabel(target)} (${target.peer}), ${others}\nClick to switch client`;
   }
 }

@@ -48,14 +48,18 @@ fn print_sessions(sessions: &[SessionInfo]) {
         return;
     }
 
-    println!("  {:<4} {:<24} {:<8} SECURITY", "ID", "PEER", "STATUS");
+    println!(
+        "  {:<4} {:<20} {:<24} {:<8} SECURITY",
+        "ID", "PLAYER", "PEER", "STATUS"
+    );
 
     for session in sessions {
         let status = if session.active { "active" } else { "standby" };
         let security = crate::SecurityLevel::from_ordinal(session.security_level).as_str();
+        let player = session.username.as_deref().unwrap_or("-");
 
         println!(
-            "  {:<4} {:<24} {status:<8} {security}",
+            "  {:<4} {player:<20} {:<24} {status:<8} {security}",
             session.id.0, session.peer
         );
     }

@@ -25,9 +25,17 @@ const copyBrokerBinaryPlugin = {
 				return;
 			}
 			fs.mkdirSync(destDir, { recursive: true });
-			fs.copyFileSync(src, dest);
-			if (process.platform !== 'win32') {
-				fs.chmodSync(dest, 0o755);
+			const staged = `${dest}.staged`;
+			try {
+				fs.copyFileSync(src, staged);
+				if (process.platform !== 'win32') {
+					fs.chmodSync(staged, 0o755);
+				}
+				fs.renameSync(staged, dest);
+			} catch (err) {
+				fs.rmSync(staged, { force: true });
+				console.warn(`[copy-broker] could not stage ${dest}: ${err.message} (skipping)`);
+				return;
 			}
 			console.log(`[copy-broker] ${src} -> ${dest}`);
 		});

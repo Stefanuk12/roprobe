@@ -94,6 +94,11 @@ describe("ClientMessage", () => {
         // SessionId is a newtype over u32.
         pin<ClientMessage>(clientMessage, { type: "SwapActive", content: 7 }, [7, 0, 0, 0, 7]);
         pin<ClientMessage>(clientMessage, { type: "SetSecurity", content: { id: 7, level: 3 } }, [3, 7, 0, 0, 0, 9]);
+        pin<ClientMessage>(
+            clientMessage,
+            { type: "RunCode", content: { session: 7, request: 1, source: "s" } },
+            [b("s"), 1, 1, 0, 0, 0, 7, 0, 0, 0, 11],
+        );
     });
 
     it("encodes the enum catalog", () => {
@@ -277,17 +282,31 @@ describe("ServerMessage", () => {
             { type: "Operation", content: { id: 1, op: { type: "Delete", content: { node: "n" } } } },
             [b("n"), 1, 1, 1, 0, 0, 0, 7],
         ],
-        ["NewSession", { type: "NewSession", content: 7 }, [7, 0, 0, 0, 9]],
+        [
+            "NewSession",
+            { type: "NewSession", content: { id: 7, username: "N", peer: "p", active: true, securityLevel: 3 } },
+            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 9],
+        ],
         ["RemoveSession", { type: "RemoveSession", content: 7 }, [7, 0, 0, 0, 10]],
         [
             "Sessions",
-            { type: "Sessions", content: [{ id: 7, peer: "p", active: true, securityLevel: 3 }] },
-            [7, 0, 0, 0, b("p"), 1, 1, 3, 1, 8],
+            { type: "Sessions", content: [{ id: 7, username: "N", peer: "p", active: true, securityLevel: 3 }] },
+            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 1, 8],
+        ],
+        [
+            "Sessions (a client that did not name itself)",
+            { type: "Sessions", content: [{ id: 7, username: undefined, peer: "p", active: true, securityLevel: 3 }] },
+            [7, 0, 0, 0, 0, b("p"), 1, 1, 3, 1, 8],
         ],
         [
             "SessionLog",
             { type: "SessionLog", content: { id: 7, entries: [{ level: "warn", content: "a" }] } },
             [2, b("a"), 1, 1, 7, 0, 0, 0, 11],
+        ],
+        [
+            "RunResult",
+            { type: "RunResult", content: { session: 7, request: 1, result: { type: "Output", content: "x" } } },
+            [b("x"), 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 12],
         ],
     ];
 

@@ -44,6 +44,7 @@ pub struct Session {
 
     pub id: SessionId,
     pub peer: SocketAddr,
+    pub username: Option<String>,
     write: WsWrite,
 
     pub mirror: Arc<Mirror>,
@@ -61,12 +62,14 @@ impl Session {
         mirror: Arc<Mirror>,
         security_level: u8,
         id: SessionId,
+        username: Option<String>,
     ) -> Self {
         Self {
             ctx,
             mirror,
             security_level: Arc::new(security_level.into()),
             peer,
+            username,
             write,
             id,
             pending: HashMap::new(),
@@ -78,6 +81,13 @@ impl Session {
     pub async fn dispatch_operation(&mut self, request: OpRequest) -> Result<()> {
         let id = self.next_op_id;
         self.next_op_id = self.next_op_id.wrapping_add(1);
+        debug!(
+            peer = %self.peer,
+            session = self.id.0,
+            id,
+            op = request.operation.kind(),
+            "relaying operation to the client",
+        );
         self.pending.insert(id, request.reply);
         self.send(ServerMessage::Operation {
             id,
@@ -164,7 +174,10 @@ impl Session {
             }
             ClientMessage::OperationResult { id, result } => match self.pending.remove(&id) {
                 Some(reply) => {
-                    let _ = reply.send(result);
+                    debug!(peer = %self.peer, id, result = result.kind(), "client answered an operation");
+                    if reply.send(result).is_err() {
+                        warn!(peer = %self.peer, id, "nobody was waiting on that operation's result");
+                    }
                 }
                 None => {
                     warn!(peer = %self.peer, id, "operation result for an unknown id, dropping")
@@ -183,7 +196,8 @@ impl Session {
             ClientMessage::SwapActive(..)
             | ClientMessage::ListSessions
             | ClientMessage::SetSecurity { .. }
-            | ClientMessage::RequestLogs => {
+            | ClientMessage::RequestLogs
+            | ClientMessage::RunCode { .. } => {
                 warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }

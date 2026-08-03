@@ -22,6 +22,48 @@
         "command": "roprobe.restartBroker",
         "title": "Restart Broker",
         "category": "roprobe"
+      },
+      {
+        "command": "roprobe.runActiveFile",
+        "title": "Run Active File on Client",
+        "category": "roprobe",
+        "icon": "$(run)"
+      },
+      {
+        "command": "roprobe.selectClient",
+        "title": "Select Target Client",
+        "category": "roprobe",
+        "icon": "$(vm)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "roprobe.runActiveFile",
+          "when": "editorLangId == luau || editorLangId == lua || resourceExtname == .luau || resourceExtname == .lua"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "roprobe.runActiveFile",
+          "when": "editorLangId == luau || editorLangId == lua || resourceExtname == .luau || resourceExtname == .lua",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "roprobe.runActiveFile",
+          "when": "editorLangId == luau || editorLangId == lua || resourceExtname == .luau || resourceExtname == .lua",
+          "group": "z_commands@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "roprobe.runActiveFile",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "editorTextFocus && (editorLangId == luau || editorLangId == lua || resourceExtname == .luau || resourceExtname == .lua)"
       }
     ],
     "configuration": {
@@ -79,6 +121,11 @@
           ],
           "default": "local-user",
           "markdownDescription": "Highest property write-security tier the inspector shows; raise it to expose Roblox-internal properties. Applied to each session as it connects."
+        },
+        "roprobe.run.alwaysAsk": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Ask which client to run on every time, instead of reusing the one in the status bar. Only asks when more than one client is connected."
         },
         "roprobe.output.autoReveal": {
           "type": "boolean",

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use squash::ReverseDeserialize;
 
-use super::{DomId, LogEntry, Operation};
+use super::{DomId, LogEntry, OpResult, Operation};
 use crate::{server::SessionId, upstream::Upstream};
 
 /// Contains all the possible outbound events to a client.
@@ -29,7 +30,7 @@ pub enum ServerMessage {
     // Control messages //
 
     /// CONTROL: A new session was added.
-    NewSession(SessionId),
+    NewSession(SessionInfo),
     /// CONTROL: A session has been removed.
     RemoveSession(SessionId),
     /// CONTROL: A batch of console output relayed from the session with the given id.
@@ -37,12 +38,19 @@ pub enum ServerMessage {
         id: SessionId,
         entries: Vec<LogEntry>,
     },
+    /// CONTROL: The outcome of a [`super::ClientMessage::RunCode`].
+    RunResult {
+        session: SessionId,
+        request: u32,
+        result: OpResult,
+    },
 }
 
 /// One connected client session as reported to the `sessions` command.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ReverseDeserialize)]
 pub struct SessionInfo {
     pub id: SessionId,
+    pub username: Option<String>,
     pub peer: String,
     pub active: bool,
     pub security_level: u8,
@@ -125,6 +133,72 @@ mod tests {
         );
     }
 
+    /// Pins [`SessionInfo`]'s frame — a plain struct, so its fields land in
+    /// declaration order — and the two messages that carry it. The extension
+    /// mirrors this layout by hand (`extension/src/broker/message/server.ts`).
+    #[test]
+    fn session_info_wire_layout_is_pinned() {
+        let named = SessionInfo {
+            id: SessionId(7),
+            username: Some("N".into()),
+            peer: "p".into(),
+            active: true,
+            security_level: 3,
+        };
+        #[rustfmt::skip]
+        let expected = vec![
+            7, 0, 0, 0,         // id (SessionId is a newtype over u32)
+            b'N', 1, 1,         // username: Some -> payload + 0x01 flag
+            b'p', 1,            // peer
+            1,                  // active
+            3,                  // security_level (u8)
+        ];
+        assert_eq!(squash::serde_serialize(&named).unwrap(), expected);
+
+        // A client that never named itself collapses the username to a lone flag.
+        let anonymous = SessionInfo {
+            username: None,
+            ..named.clone()
+        };
+        assert_eq!(
+            squash::serde_serialize(&anonymous).unwrap(),
+            vec![7, 0, 0, 0, 0, b'p', 1, 1, 3],
+        );
+
+        // Sessions is a Vec: elements reversed, VLQ count last, then tag 8.
+        assert_eq!(
+            ServerMessage::Sessions(vec![named.clone()])
+                .to_bytes()
+                .unwrap(),
+            [expected.clone(), vec![1, 8]].concat(),
+        );
+        // NewSession carries one straight, tag 9 last.
+        assert_eq!(
+            ServerMessage::NewSession(named.clone()).to_bytes().unwrap(),
+            [expected, vec![9]].concat(),
+        );
+
+        // Read back, not just written: the `sessions` command decodes these, and a
+        // plain `Deserialize` derive reads every field out of the next one's bytes.
+        for info in [named, anonymous] {
+            let ServerMessage::Sessions(back) =
+                ServerMessage::from_bytes(ServerMessage::Sessions(vec![info.clone()]).to_bytes().unwrap())
+                    .unwrap()
+            else {
+                panic!("decoded a different variant");
+            };
+            assert_eq!(back, vec![info.clone()]);
+
+            let ServerMessage::NewSession(back) =
+                ServerMessage::from_bytes(ServerMessage::NewSession(info.clone()).to_bytes().unwrap())
+                    .unwrap()
+            else {
+                panic!("decoded a different variant");
+            };
+            assert_eq!(back, info);
+        }
+    }
+
     /// Pins [`ServerMessage::SessionLog`]'s frame: a struct variant, so `entries`
     /// lands before `id` with tag 11 last.
     #[test]
@@ -146,6 +220,23 @@ mod tests {
         );
     }
 
+    /// Pins [`ServerMessage::RunResult`]'s frame: a struct variant, so its fields
+    /// land reversed (`result`, `request`, `session`) with tag 12 last.
+    #[test]
+    fn run_result_wire_layout_is_pinned() {
+        assert_eq!(
+            (ServerMessage::RunResult {
+                session: SessionId(7),
+                request: 1,
+                result: OpResult::Output("x".into()),
+            })
+            .to_bytes()
+            .unwrap(),
+            // "x" then OpResult tag 3, request (u32 LE), session (u32 LE), tag.
+            vec![b'x', 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 12],
+        );
+    }
+
     /// Pins [`ServerMessage::Operation`]'s frame: a struct variant whose fields land reversed (`op` before `id`) with tag 7 last, the `op` payload a typed [`Operation`] mirrored by hand in the Luau `operationFrame` codec.
     #[test]
     fn operation_wire_layout_is_pinned() {
@@ -162,3 +253,4 @@ mod tests {
         );
     }
 }
+

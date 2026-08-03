@@ -36,6 +36,13 @@ pub enum ClientMessage {
     /// Control-only: ask for the buffered console history, answered with one
     /// [`super::ServerMessage::SessionLog`] per run of lines.
     RequestLogs,
+    /// Control-only: compile and run `source` on the session with the given id,
+    /// answered with a [`super::ServerMessage::RunResult`].
+    RunCode {
+        session: SessionId,
+        request: u32,
+        source: String,
+    },
 }
 
 impl ClientMessage {
@@ -62,6 +69,7 @@ impl ClientMessage {
             ClientMessage::ListSessions => "list-sessions",
             ClientMessage::SetSecurity { .. } => "set-security",
             ClientMessage::RequestLogs => "request-logs",
+            ClientMessage::RunCode { .. } => "run-code",
         }
     }
 }
@@ -164,6 +172,35 @@ mod tests {
             ClientMessage::from_bytes(vec![0x0a]).unwrap(),
             ClientMessage::RequestLogs
         ));
+    }
+
+    /// Pins [`ClientMessage::RunCode`]: a struct variant, so its fields land
+    /// reversed (`source`, `request`, `session`) with tag 11 last.
+    #[test]
+    fn run_code_round_trips_and_is_pinned() {
+        let msg = ClientMessage::RunCode {
+            session: SessionId(7),
+            request: 1,
+            source: "s".into(),
+        };
+        #[rustfmt::skip]
+        let expected = vec![
+            b's', 1,            // source
+            1, 0, 0, 0,         // request (u32 LE)
+            7, 0, 0, 0,         // session (SessionId is a newtype over u32)
+            11,                 // ClientMessage tag
+        ];
+        assert_eq!(msg.to_bytes().unwrap(), expected);
+
+        let ClientMessage::RunCode {
+            session,
+            request,
+            source,
+        } = ClientMessage::from_bytes(expected).unwrap()
+        else {
+            panic!("decoded a different variant");
+        };
+        assert_eq!((session, request, source), (SessionId(7), 1, "s".to_string()));
     }
 
     #[test]

@@ -3,7 +3,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { decodeServer, encodeClient, type ClientMessage, type ServerMessage } from "./message";
+import {
+    decodeServer,
+    encodeClient,
+    type ClientMessage,
+    type OpResult,
+    type ServerMessage,
+    type SessionId,
+} from "./message";
 import { ExectionChannelHandler } from "../execution_channel_handler";
 
 interface BrokerHandshake {
@@ -38,6 +45,7 @@ const SECURITY_ORDINALS: Record<SecurityLevel, number> = {
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 const RECONNECT_DELAY_MS = 1_000;
+const RUN_STALLED_MS = 10_000;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -95,6 +103,8 @@ export class BrokerManager implements vscode.Disposable {
     private config = readConfig();
     private readonly configWatcher: vscode.Disposable;
     private readonly log: vscode.LogOutputChannel;
+    private readonly pendingRuns = new Map<number, (result: OpResult) => void>();
+    private nextRunRequest = 0;
 
     executionChannels;
 
@@ -152,6 +162,37 @@ export class BrokerManager implements vscode.Disposable {
         } else {
             this.log.warn(`Dropping ${message.type}: broker not connected`);
         }
+    }
+
+    /// Compile and run `source` on the given session, resolving with whatever the
+    /// client reports back.
+    runCode(session: SessionId, source: string): Promise<OpResult> {
+        if (!this.connected) {
+            this.log.error(`Cannot run on session ${session}: not connected to a broker`);
+            return Promise.resolve<OpResult>({ type: "Err", content: "not connected to a broker" });
+        }
+
+        const request = this.nextRunRequest;
+        this.nextRunRequest = (this.nextRunRequest + 1) >>> 0;
+        this.log.info(`Run request ${request}: ${source.length} byte(s) to session ${session}`);
+
+        return new Promise<OpResult>((resolve) => {
+            const stalled = setTimeout(
+                () =>
+                    this.log.warn(
+                        `Run request ${request} has gone ${RUN_STALLED_MS / 1_000}s without an answer — ` +
+                            "still waiting. A broker predating the run protocol drops the frame silently, " +
+                            "so try the 'roprobe: Restart Broker' command if this never returns.",
+                    ),
+                RUN_STALLED_MS,
+            );
+
+            this.pendingRuns.set(request, (result) => {
+                clearTimeout(stalled);
+                resolve(result);
+            });
+            this.send({ type: "RunCode", content: { session, request, source } });
+        });
     }
 
     /// Kill the current broker, and spawn a new one.
@@ -323,6 +364,7 @@ export class BrokerManager implements vscode.Disposable {
                             return;
                         }
                         this.ws = undefined;
+                        this.failPendingRuns("the broker connection closed mid-run");
                         this._onConnectionChanged.fire(false);
                         this.scheduleReconnect();
                     });
@@ -358,11 +400,24 @@ export class BrokerManager implements vscode.Disposable {
             return;
         }
 
+        if (message.type === "RunResult") {
+            const { session, request, result } = message.content;
+            const resolve = this.pendingRuns.get(request);
+            this.log.info(
+                `Run request ${request} answered by session ${session}: ${result.type}` +
+                    (resolve ? "" : " (no caller is waiting on it)"),
+            );
+            if (resolve) {
+                this.pendingRuns.delete(request);
+                resolve(result);
+            }
+        }
+
         // A session joins on whatever tier its broker defaults to; pull it to the configured one.
         if (message.type === "NewSession") {
             this.send({
                 type: "SetSecurity",
-                content: { id: message.content, level: SECURITY_ORDINALS[this.config.securityLevel] },
+                content: { id: message.content.id, level: SECURITY_ORDINALS[this.config.securityLevel] },
             });
         }
 
@@ -382,6 +437,17 @@ export class BrokerManager implements vscode.Disposable {
         }, RECONNECT_DELAY_MS);
     }
 
+    /// Settle every in-flight run — nothing will answer them once the socket is gone.
+    private failPendingRuns(reason: string): void {
+        if (this.pendingRuns.size > 0) {
+            this.log.warn(`Failing ${this.pendingRuns.size} in-flight run(s): ${reason}`);
+        }
+        for (const resolve of this.pendingRuns.values()) {
+            resolve({ type: "Err", content: reason });
+        }
+        this.pendingRuns.clear();
+    }
+
     private teardownConnection(): void {
         if (this.ws) {
             try {
@@ -390,6 +456,7 @@ export class BrokerManager implements vscode.Disposable {
                 // ignore
             }
             this.ws = undefined;
+            this.failPendingRuns("the broker connection was torn down mid-run");
             this._onConnectionChanged.fire(false);
         }
     }

@@ -1,7 +1,7 @@
 use std::{
     net::SocketAddr,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
@@ -12,7 +12,7 @@ use futures_util::{
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 use tokio_tungstenite::{
     WebSocketStream, accept_hdr_async,
@@ -26,7 +26,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     Context, Result,
-    protocol::{ClientMessage, ServerMessage, text_decode},
+    protocol::{ClientMessage, OpResult, Operation, ServerMessage, text_decode},
     server::session::PostHandle,
 };
 
@@ -146,12 +146,14 @@ impl Server {
     async fn handle_connection(&self, stream: TcpStream, peer: SocketAddr) -> crate::Result<()> {
         let control = Arc::new(AtomicBool::new(false));
         let security = Arc::new(AtomicU8::new(NO_SECURITY_QUERY));
+        let username = Arc::new(Mutex::new(None::<String>));
 
         // Verify the auth token, otherwise reject the request.
         let callback = {
             let token = Arc::new(self.ctx.lockfile.handshake.token.as_str());
             let control = Arc::clone(&control);
             let security = Arc::clone(&security);
+            let username = Arc::clone(&username);
             move |req: &Request, response: Response| -> Result<Response, ErrorResponse> {
                 let query = req.uri().query().unwrap_or_default();
 
@@ -169,6 +171,7 @@ impl Server {
                 if let Some(level) = Self::query_security(query) {
                     security.store(level, Ordering::Relaxed);
                 }
+                *username.lock().expect("username poisoned") = Self::query_username(query);
 
                 Ok(response)
             }
@@ -190,7 +193,8 @@ impl Server {
         };
 
         // Non-control after this
-        info!(%peer, "client connected");
+        let username = username.lock().expect("username poisoned").take();
+        info!(%peer, ?username, "client connected");
 
         // Initialise the mirror
         let (op_tx, mut op_rx) = mpsc::channel::<OpRequest>(32);
@@ -203,7 +207,15 @@ impl Server {
         // Create and add the session
         let (write, mut read) = ws.split();
         let id = SessionId(rand::random());
-        let mut session = Session::new(self.ctx.clone(), peer, write, mirror, security_level, id);
+        let mut session = Session::new(
+            self.ctx.clone(),
+            peer,
+            write,
+            mirror,
+            security_level,
+            id,
+            username,
+        );
         session.send(ServerMessage::Hello).await?;
         self.ctx.sessions.insert(session).await;
         let session_guard = self.ctx.controls.track_session();
@@ -288,6 +300,7 @@ impl Server {
         let mut on_session_added = self.ctx.sessions.subscribe_session_added();
         let mut on_session_removed = self.ctx.sessions.subscribe_session_removed();
         let mut on_log = self.ctx.sessions.subscribe_log();
+        let (run_tx, mut run_rx) = mpsc::channel::<(SessionId, u32, OpResult)>(32);
 
         loop {
             tokio::select! {
@@ -324,6 +337,9 @@ impl Server {
 
                     debug!(%peer, id = id.0, lines = entries.len(), "forwarding console batch");
                     write.send(ServerMessage::SessionLog { id, entries }.try_into()?).await?;
+                }
+                Some((session, request, result)) = run_rx.recv() => {
+                    write.send(ServerMessage::RunResult { session, request, result }.try_into()?).await?;
                 }
 
                 message = read_next(peer, &mut read) => {
@@ -378,6 +394,42 @@ impl Server {
                                 .is_some();
                             info!(%peer, id = id.0, level, found, "control set security");
                         }
+                        ReadNext::ClientMessage(ClientMessage::RunCode { session, request, source }) => {
+                            let sink = self
+                                .ctx
+                                .sessions
+                                .holder
+                                .read()
+                                .await
+                                .find(session)
+                                .and_then(|target| target.mirror.op_sink());
+
+                            let Some(sink) = sink else {
+                                let known: Vec<u32> = self.ctx.sessions.holder.read().await.list().iter().map(|s| s.id.0).collect();
+                                warn!(%peer, id = session.0, request, ?known, "run requested for a session with no live operation sink");
+                                let result = OpResult::Err(format!("no client session {}", session.0));
+                                write.send(ServerMessage::RunResult { session, request, result }.try_into()?).await?;
+                                continue;
+                            };
+
+                            info!(%peer, id = session.0, request, bytes = source.len(), "control run");
+                            let run_tx = run_tx.clone();
+                            tokio::spawn(async move {
+                                let (reply, answer) = oneshot::channel();
+                                let relay = OpRequest { operation: Operation::RunCode { source }, reply };
+                                let result = match sink.send(relay).await {
+                                    Ok(()) => answer.await.unwrap_or_else(|_| {
+                                        OpResult::Err("session disconnected before it answered".into())
+                                    }),
+                                    Err(_) => OpResult::Err("session is no longer accepting operations".into()),
+                                };
+                                
+                                info!(id = session.0, request, result = result.kind(), "run answered");
+                                if run_tx.send((session, request, result)).await.is_err() {
+                                    warn!(id = session.0, request, "the control connection went away before the run answered");
+                                }
+                            });
+                        }
                         ReadNext::Ping(data) => {
                             write.send(Message::Pong(data)).await?;
                         }
@@ -409,6 +461,49 @@ impl Server {
         })
     }
 
+    /// The `username=<name>` a client named itself with at connect, if any.
+    fn query_username(query: &str) -> Option<String> {
+        query.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some("username"), Some(name)) if !name.is_empty() => {
+                    Some(Self::percent_decode(name))
+                }
+                _ => None,
+            }
+        })
+    }
+
+    /// Undo percent-encoding, leaving a malformed escape as the literal text it is.
+    fn percent_decode(value: &str) -> String {
+        let bytes = value.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+
+        while i < bytes.len() {
+            let escape = match bytes[i] {
+                b'%' => bytes
+                    .get(i + 1..i + 3)
+                    .and_then(|hex| std::str::from_utf8(hex).ok())
+                    .and_then(|hex| u8::from_str_radix(hex, 16).ok()),
+                _ => None,
+            };
+
+            match escape {
+                Some(byte) => {
+                    out.push(byte);
+                    i += 3;
+                }
+                None => {
+                    out.push(bytes[i]);
+                    i += 1;
+                }
+            }
+        }
+
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
     /// The `security=<level>` ordinal a client requested at connect, if valid.
     fn query_security(query: &str) -> Option<u8> {
         query.split('&').find_map(|pair| {
@@ -436,5 +531,31 @@ impl Server {
             }
         }
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn username_is_read_off_the_connect_query() {
+        assert_eq!(
+            Server::query_username("token=abc&username=Builderman&security=roblox"),
+            Some("Builderman".to_string()),
+        );
+        // A name the client escaped comes back as the player typed it.
+        assert_eq!(
+            Server::query_username("username=Some%20One%26Co"),
+            Some("Some One&Co".to_string()),
+        );
+        // A client that did not name itself, and one that named itself nothing.
+        assert_eq!(Server::query_username("token=abc"), None);
+        assert_eq!(Server::query_username("username="), None);
+        // A malformed escape stays the text it is rather than eating what follows.
+        assert_eq!(
+            Server::query_username("username=100%25%2"),
+            Some("100%%2".to_string()),
+        );
     }
 }

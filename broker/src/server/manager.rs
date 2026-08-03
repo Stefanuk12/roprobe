@@ -74,16 +74,22 @@ impl SessionsHolder {
         Some(self.store.remove(i))
     }
 
+    /// Describe one [`Session`], by its [`SessionId`].
+    pub fn info(&self, id: SessionId) -> Option<SessionInfo> {
+        self.find(id).map(|s| SessionInfo {
+            id: s.id,
+            username: s.username.clone(),
+            peer: s.peer.to_string(),
+            active: *self.current.borrow() == Some(s.id),
+            security_level: s.security_level.load(Ordering::Relaxed),
+        })
+    }
+
     /// List all of the current session data.
     pub fn list(&self) -> Vec<SessionInfo> {
         self.store
             .iter()
-            .map(|s| SessionInfo {
-                id: s.id,
-                peer: s.peer.to_string(),
-                active: *self.current.borrow() == Some(s.id),
-                security_level: s.security_level.load(Ordering::Relaxed),
-            })
+            .filter_map(|s| self.info(s.id))
             .collect()
     }
 
@@ -115,7 +121,7 @@ impl SessionsHolder {
 #[derive(Clone, Debug)]
 pub struct Sessions {
     pub holder: Arc<RwLock<SessionsHolder>>,
-    on_session_added: Arc<broadcast::Sender<SessionId>>,
+    on_session_added: Arc<broadcast::Sender<SessionInfo>>,
     on_session_removed: Arc<broadcast::Sender<SessionId>>,
     on_log: Arc<broadcast::Sender<(SessionId, Vec<LogEntry>)>>,
     history: Arc<Mutex<VecDeque<(SessionId, LogEntry)>>>,
@@ -188,8 +194,12 @@ impl Sessions {
 
     pub async fn insert(&self, session: Session) {
         let id = session.id;
-        self.holder.write().await.insert(session);
-        let _ = self.on_session_added.send(id);
+        let mut holder = self.holder.write().await;
+        holder.insert(session);
+        let info = holder.info(id).expect("the session we just inserted");
+        drop(holder);
+
+        let _ = self.on_session_added.send(info);
     }
 
     pub async fn remove(&self, id: SessionId) {
@@ -237,7 +247,7 @@ impl Sessions {
         batches
     }
 
-    pub fn subscribe_session_added(&self) -> broadcast::Receiver<SessionId> {
+    pub fn subscribe_session_added(&self) -> broadcast::Receiver<SessionInfo> {
         self.on_session_added.subscribe()
     }
 

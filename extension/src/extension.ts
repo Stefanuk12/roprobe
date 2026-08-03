@@ -1,11 +1,17 @@
 import * as vscode from "vscode";
 import { BrokerManager } from "./broker";
-import { SessionStatusItem } from "./status_bar";
+import type { SessionId } from "./broker/message";
+import { promptForTarget, runActiveFile } from "./run";
+import { sessionLabel, SessionRegistry } from "./sessions";
+import { RunStatusItem, SessionStatusItem } from "./status_bar";
 
 let broker: BrokerManager | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
-  const log = vscode.window.createOutputChannel("roprobe", { log: true }); 
+  const log = vscode.window.createOutputChannel("roprobe", { log: true });
+  log.info(
+    `Activating roprobe ${context.extension.packageJSON.version} from ${context.extensionPath}`,
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("roprobe.restartBroker", async () => {
@@ -22,38 +28,60 @@ export async function activate(context: vscode.ExtensionContext) {
 
   broker = new BrokerManager(context, log);
   context.subscriptions.push(broker);
-  context.subscriptions.push(new SessionStatusItem(broker));
   context.subscriptions.push(
     broker.onMessage((message) => {
       if (message.type === "SessionLog") {
         log.info(
           `session ${message.content.id} relayed ${message.content.entries.length} console line(s)`,
         );
+        for (const entry of message.content.entries) {
+          broker?.executionChannels.append(message.content.id.toString(), entry);
+        }
       } else {
         log.info(`got message ${JSON.stringify(message)}`);
       }
+    }),
+  );
 
-      switch (message.type) {
-        case "NewSession":
-          broker?.executionChannels.addChannel(message.content.toString());
-          break;
-        case "RemoveSession":
-          broker?.executionChannels.removeChannel(message.content.toString());
-          break;
-        case "Sessions":
-          for (const session of message.content) {
-            broker?.executionChannels.addChannel(session.id.toString());
-          }
-          break;
-        case "SessionLog":
-          for (const entry of message.content.entries) {
-            broker?.executionChannels.append(
-              message.content.id.toString(),
-              entry,
-            );
-          }
-          break;
+  const sessions = new SessionRegistry(broker, log);
+  let shownFor: SessionId | undefined;
+  context.subscriptions.push(sessions);
+  context.subscriptions.push(
+    sessions.onDidChange(() => {
+      const channels = broker?.executionChannels;
+      if (!channels) {
+        return;
       }
+
+      const live = new Set<string>();
+      for (const session of sessions.list()) {
+        const id = session.id.toString();
+        live.add(id);
+        channels.addChannel(id, sessionLabel(session));
+      }
+      for (const id of channels.ids()) {
+        if (!live.has(id)) {
+          channels.removeChannel(id);
+        }
+      }
+    }),
+  );
+  context.subscriptions.push(new SessionStatusItem(broker, sessions));
+  context.subscriptions.push(new RunStatusItem(broker, sessions));
+  context.subscriptions.push(
+    vscode.commands.registerCommand("roprobe.selectClient", () =>
+      promptForTarget(sessions),
+    ),
+    vscode.commands.registerCommand("roprobe.runActiveFile", () =>
+      runActiveFile(broker!, sessions, log),
+    ),
+    sessions.onDidChange(() => {
+      const target = sessions.target;
+      if (!target || target.id === shownFor) {
+        return;
+      }
+      shownFor = target.id;
+      broker?.executionChannels.setActive(target.id.toString());
     }),
   );
 
