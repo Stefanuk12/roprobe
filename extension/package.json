@@ -43,6 +43,47 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Auth token the broker accepts. Empty mints a fresh one per broker startup, which the extension reads back from the local broker's lockfile. Required when `#roprobe.broker.host#` is remote."
+        },
+        "roprobe.broker.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Broker executable to run instead of the bundled one. Only used when the extension spawns the broker itself."
+        },
+        "roprobe.upstream.verde": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether the broker bridges to verde. Re-applied on every connection, so it also governs a broker the extension did not spawn."
+        },
+        "roprobe.upstream.verdePort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 9000,
+          "markdownDescription": "Port of verde's WebSocket server. The broker reads this once at startup, so it only takes effect on a broker the extension spawns."
+        },
+        "roprobe.securityLevel": {
+          "type": "string",
+          "enum": [
+            "none",
+            "plugin",
+            "local-user",
+            "roblox-script",
+            "roblox"
+          ],
+          "enumDescriptions": [
+            "Only freely-writable properties.",
+            "...plus plugin-writable ones.",
+            "...plus local-user-writable ones.",
+            "...plus Roblox-script-writable ones.",
+            "...plus Roblox-only-writable internals (e.g. Player.User)."
+          ],
+          "default": "local-user",
+          "markdownDescription": "Highest property write-security tier the inspector shows; raise it to expose Roblox-internal properties. Applied to each session as it connects."
+        },
+        "roprobe.output.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Reveal the Output panel when the session whose console output is redirected changes."
         }
       }
     }

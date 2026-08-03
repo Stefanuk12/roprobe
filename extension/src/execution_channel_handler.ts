@@ -130,6 +130,11 @@ export class ExectionChannelHandler implements vscode.Disposable {
       return;
     }
 
-    channel.show();
+    const autoReveal = vscode.workspace
+      .getConfiguration("roprobe.output")
+      .get<boolean>("autoReveal", true);
+    if (autoReveal) {
+      channel.show();
+    }
   }
 }

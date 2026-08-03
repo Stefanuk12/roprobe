@@ -12,16 +12,28 @@ interface BrokerHandshake {
     pid?: number;
 }
 
+type SecurityLevel = "none" | "plugin" | "local-user" | "roblox-script" | "roblox";
+
 interface BrokerConfig {
     host: string;
     port: number;
     token?: string;
+    path?: string;
+    verde: boolean;
+    verdePort: number;
+    securityLevel: SecurityLevel;
 }
 
-/** Cross-process runtime state, so a broker started elsewhere is discoverable. */
 const LOCKFILE = path.join(os.tmpdir(), "roprobe", "broker.json");
-
-const CONFIG_SECTION = "roprobe.broker";
+const CONFIG_SECTION = "roprobe";
+const RECONNECT_ON_CHANGE = ["roprobe.broker", "roprobe.upstream", "roprobe.securityLevel"];
+const SECURITY_ORDINALS: Record<SecurityLevel, number> = {
+    "none": 0,
+    "plugin": 1,
+    "local-user": 2,
+    "roblox-script": 3,
+    "roblox": 4,
+};
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 5_000;
@@ -31,13 +43,18 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function readConfig(): BrokerConfig {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const host = config.get<string>("host", "").trim();
-    const token = config.get<string>("token", "").trim();
+    const host = config.get<string>("broker.host", "").trim();
+    const token = config.get<string>("broker.token", "").trim();
+    const binary = config.get<string>("broker.path", "").trim();
 
     return {
         host: host || "127.0.0.1",
-        port: config.get<number>("port", 0),
+        port: config.get<number>("broker.port", 0),
         token: token || undefined,
+        path: binary || undefined,
+        verde: config.get<boolean>("upstream.verde", true),
+        verdePort: config.get<number>("upstream.verdePort", 9000),
+        securityLevel: config.get<SecurityLevel>("securityLevel", "local-user"),
     };
 }
 
@@ -50,7 +67,11 @@ function brokerUrl(host: string, port: number, token: string): string {
     return `ws://${authority}:${port}/?token=${encodeURIComponent(token)}&control=1`;
 }
 
-function brokerBinaryPath(ctx: vscode.ExtensionContext): string {
+function brokerBinaryPath(ctx: vscode.ExtensionContext, config: BrokerConfig): string {
+    if (config.path) {
+        return config.path;
+    }
+
     const exe = process.platform === "win32" ? "broker.exe" : "broker";
     const p = ctx.asAbsolutePath(path.join("bin", `${process.platform}-${process.arch}`, exe));
 
@@ -71,6 +92,7 @@ export class BrokerManager implements vscode.Disposable {
     private spawnedHere = false;
     private disposed = false;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private config = readConfig();
     private readonly configWatcher: vscode.Disposable;
     private readonly log: vscode.LogOutputChannel;
 
@@ -84,7 +106,7 @@ export class BrokerManager implements vscode.Disposable {
         this.log = log;
         this.executionChannels = new ExectionChannelHandler(ctx);
         this.configWatcher = vscode.workspace.onDidChangeConfiguration((ev) => {
-            if (!ev.affectsConfiguration(CONFIG_SECTION)) {
+            if (!RECONNECT_ON_CHANGE.some((section) => ev.affectsConfiguration(section))) {
                 return;
             }
             this.log.info("Broker settings changed; reconnecting");
@@ -99,11 +121,15 @@ export class BrokerManager implements vscode.Disposable {
         }
 
         const config = readConfig();
+        this.config = config;
         if (isLocal(config.host)) {
             await this.startLocal(config);
         } else {
             await this.attachRemote(config);
         }
+
+        // Spawn args only reach a broker we spawned, so state the upstream we want either way.
+        this.send({ type: "SetUpstream", content: { upstream: "Verde", enabled: config.verde } });
 
         // Grab all current sessions with any relevant data
         this.send({ type: "ListSessions" });
@@ -188,13 +214,16 @@ export class BrokerManager implements vscode.Disposable {
     }
 
     private spawnAndHandshake(config: BrokerConfig): Promise<BrokerHandshake> {
-        const bin = brokerBinaryPath(this.ctx);
-        const args = ["run", "-v", "--handshake=stdout"];
+        const bin = brokerBinaryPath(this.ctx, config);
+        const args = ["run", "-v", "--handshake=stdout", "--verde-port", String(config.verdePort), "--security-level", config.securityLevel];
         if (config.port !== 0) {
             args.push("--port", String(config.port));
         }
         if (config.token) {
             args.push("--token", config.token);
+        }
+        if (!config.verde) {
+            args.push("--no-verde");
         }
 
         let child: ChildProcess;
@@ -314,6 +343,14 @@ export class BrokerManager implements vscode.Disposable {
         } catch (err) {
             this.log.warn(`Dropping undecodable frame: ${String(err)}`);
             return;
+        }
+
+        // A session joins on whatever tier its broker defaults to; pull it to the configured one.
+        if (message.type === "NewSession") {
+            this.send({
+                type: "SetSecurity",
+                content: { id: message.content, level: SECURITY_ORDINALS[this.config.securityLevel] },
+            });
         }
 
         this._onMessage.fire(message);
