@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { BrokerManager } from "./broker";
+import { SessionStatusItem } from "./status_bar";
 
 let broker: BrokerManager | undefined;
 
@@ -21,6 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   broker = new BrokerManager(context, log);
   context.subscriptions.push(broker);
+  context.subscriptions.push(new SessionStatusItem(broker));
   context.subscriptions.push(
     broker.onMessage((message) => {
       if (message.type === "SessionLog") {

@@ -102,6 +102,13 @@ export class BrokerManager implements vscode.Disposable {
     /// Fires for every decoded message the broker sends.
     readonly onMessage = this._onMessage.event;
 
+    private readonly _onConnectionChanged = new vscode.EventEmitter<boolean>();
+    readonly onConnectionChanged = this._onConnectionChanged.event;
+
+    get connected(): boolean {
+        return this.ws?.readyState === WebSocket.OPEN;
+    }
+
     constructor(private readonly ctx: vscode.ExtensionContext, log: vscode.LogOutputChannel) {
         this.log = log;
         this.executionChannels = new ExectionChannelHandler(ctx);
@@ -166,6 +173,7 @@ export class BrokerManager implements vscode.Disposable {
         // Only stop the broker if we started it — a shared one outlives this window.
         this.killOwnedChild();
         this._onMessage.dispose();
+        this._onConnectionChanged.dispose();
         this.log.dispose();
     }
 
@@ -307,10 +315,15 @@ export class BrokerManager implements vscode.Disposable {
                     clearTimeout(timer);
                     this.ws = ws;
                     this.log.info("Broker connection open");
+                    this._onConnectionChanged.fire(true);
                     ws.addEventListener("message", (ev: MessageEvent) => this.receive(ev.data));
                     ws.addEventListener("close", () => {
                         this.log.info("Broker connection closed");
+                        if (this.ws !== ws) {
+                            return;
+                        }
                         this.ws = undefined;
+                        this._onConnectionChanged.fire(false);
                         this.scheduleReconnect();
                     });
                     resolve();
@@ -377,6 +390,7 @@ export class BrokerManager implements vscode.Disposable {
                 // ignore
             }
             this.ws = undefined;
+            this._onConnectionChanged.fire(false);
         }
     }
 
