@@ -187,6 +187,10 @@ impl Session {
                 debug!(peer = %self.peer, count = entries.len(), "client console batch");
                 self.ctx.sessions.broadcast_log(self.id, entries);
             }
+            ClientMessage::RemoteCalls(calls) => {
+                debug!(peer = %self.peer, count = calls.len(), "client remote batch");
+                self.ctx.sessions.broadcast_remotes(self.id, calls);
+            }
             // `set_current` takes the sessions lock our caller already holds, so it is deferred rather than awaited here.
             ClientMessage::RequestActive => {
                 info!(peer = %self.peer, id = self.id.0, "client requested the active slot");
@@ -197,7 +201,10 @@ impl Session {
             | ClientMessage::ListSessions
             | ClientMessage::SetSecurity { .. }
             | ClientMessage::RequestLogs
-            | ClientMessage::RunCode { .. } => {
+            | ClientMessage::RunCode { .. }
+            | ClientMessage::RequestRemotes
+            | ClientMessage::ClearRemotes
+            | ClientMessage::SetSpy(..) => {
                 warn!(peer = %self.peer, "control message on a syncing connection, ignoring");
             }
         }

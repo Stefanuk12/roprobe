@@ -60,7 +60,7 @@ local function formatFrame(level: number): string?
     return `Script '{at}', Line {line}`
 end
 
---- Build an `xpcall` handler reporting the error and the frames above `boundary` the roprobe function that called in. 
+--- Build an `xpcall` handler reporting the error and the frames above `boundary` the roprobe function that called in.
 local function tracebackTo(boundary: any): (any) -> string
     return function(message: any): string
         local frames: { string } = {}

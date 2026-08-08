@@ -122,6 +122,7 @@ local function buildControlCodec(client: Sandbox)
         { type = "Search" },
         { type = "RequestNodes" },
         { type = "Operation" },
+        { type = "Spy" },
         { type = "Sessions" },
         { type = "NewSession", content = Squash.T(primitives.u32) },
         { type = "RemoveSession", content = Squash.T(primitives.u32) },

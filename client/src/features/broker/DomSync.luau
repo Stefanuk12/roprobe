@@ -1,5 +1,6 @@
 -- Dependencies
 local Messages = require("@lib/Messages")
+local uniqueId = require("@engine/uniqueId")
 
 --- Validate property values without mutating state, so a bad value can't error
 --- after instances are already marked mirrored.
@@ -119,16 +120,9 @@ end
 
 --- Allocate an id for an unseen instance.
 function DomSync._allocateId(self: DomSync, instance: Instance): string
-    if gethiddenproperty then
-        local ok, uniqueId = pcall(gethiddenproperty, instance, "UniqueId")
-        -- Services (and freshly-created instances) report an all-zero UniqueId;
-        -- those would all collide, so only trust a genuinely unique one.
-        if ok and uniqueId ~= nil then
-            local id = tostring(uniqueId)
-            if not id:match("^0*$") then
-                return id
-            end
-        end
+    local stable = uniqueId(instance)
+    if stable then
+        return stable
     end
 
     local id = tostring(self._nextId)

@@ -1,1 +1,1 @@
-export { BrokerManager } from "./manager";
+export { BrokerManager, CONFIG_SECTION, readSpyConfig } from "./manager";

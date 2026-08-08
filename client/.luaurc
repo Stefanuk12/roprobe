@@ -6,7 +6,8 @@
     "lib": "./src/lib",
     "engine": "./src/engine",
     "features": "./src/features",
-    "src": "./src"
+    "src": "./src",
+    "generated": "./.meta/generated"
   },
   "globals": [],
   "languageMode": "strict",

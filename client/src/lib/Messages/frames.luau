@@ -4,6 +4,7 @@ local Squash = require("@pkgs/squash")
 local dom = require("@lib/Messages/dom")
 local operations = require("@lib/Messages/operations")
 local primitives = require("@lib/Messages/primitives")
+local remote = require("@lib/Messages/remote")
 local serdeArray = require("@lib/serdeArray")
 local squashEnum = require("@lib/squashEnum")
 
@@ -21,6 +22,10 @@ local domPatch = dom.domPatch
 local enumFamilies = operations.enumFamilies
 local operation = operations.operation
 local opResult = operations.opResult
+
+-- Remote spy
+local remoteCalls = remote.remoteCalls
+local spyConfig = remote.spyConfig
 
 -- Types
 type ClientMessage = Broker.ClientMessage
@@ -104,6 +109,7 @@ local clientMessage: Squash.SerDes<ClientMessage> = squashEnum({
     { type = "OperationResult" :: "OperationResult", content = Squash.T(operationResponse) },
     { type = "RequestActive" :: "RequestActive" } :: any,
     { type = "Log" :: "Log", content = Squash.T(logEntries) },
+    { type = "RemoteCalls" :: "RemoteCalls", content = Squash.T(remoteCalls) },
 })
 
 --- Mirrors `Search`'s `{ from, query }` payload.
@@ -130,6 +136,7 @@ local serverMessage: Squash.SerDes<ServerMessage> = squashEnum({
     { type = "Search" :: "Search", content = Squash.T(searchQuery) },
     { type = "RequestNodes" :: "RequestNodes", content = Squash.T(strArray) },
     { type = "Operation" :: "Operation", content = Squash.T(operationRequest) },
+    { type = "Spy" :: "Spy", content = Squash.T(spyConfig) },
 })
 
 return {

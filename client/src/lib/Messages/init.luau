@@ -3,6 +3,7 @@ local Broker = require("@contracts/Broker")
 local Squash = require("@pkgs/squash")
 local dom = require("@lib/Messages/dom")
 local frames = require("@lib/Messages/frames")
+local remote = require("@lib/Messages/remote")
 local tags = require("@lib/Messages/tags")
 local values = require("@lib/Messages/values")
 
@@ -24,6 +25,15 @@ export type Operation = Broker.Operation
 export type OpResult = Broker.OpResult
 export type LogLevel = Broker.LogLevel
 export type LogEntry = Broker.LogEntry
+export type RemoteDirection = Broker.RemoteDirection
+export type InstanceRef = Broker.InstanceRef
+export type CallSource = Broker.CallSource
+export type FunctionRef = Broker.FunctionRef
+export type LuaEntry = Broker.LuaEntry
+export type LuaTable = Broker.LuaTable
+export type LuaValue = Broker.LuaValue
+export type RemoteCall = Broker.RemoteCall
+export type SpyConfig = Broker.SpyConfig
 export type OperationRequest = Broker.OperationRequest
 export type OperationResponse = Broker.OperationResponse
 export type ClientMessage = Broker.ClientMessage
@@ -42,6 +52,9 @@ Messages.domPatch = dom.domPatch
 Messages.clientMessage = clientMessage
 Messages.serverMessage = serverMessage
 Messages.enumFamilies = values.familyCatalog
+Messages.luaValue = remote.luaValue
+Messages.remoteCall = remote.remoteCall
+Messages.spyConfig = remote.spyConfig
 
 -- Tag introspection
 Messages.tagOf = tags.tagOf

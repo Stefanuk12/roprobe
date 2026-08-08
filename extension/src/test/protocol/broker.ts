@@ -12,6 +12,7 @@ import {
     encodeClient,
     type ClientMessage,
     type DomValue,
+    type RemoteCall,
     type ServerMessage,
 } from "../../broker/message";
 
@@ -165,6 +166,63 @@ function everyDomValue(): Map<string, DomValue> {
     ]);
 }
 
+/**
+ * One captured call carrying every hard part of the value codec at once: a
+ * non-UTF-8 string, a nested table with a cycle, an instance reference, and a
+ * Roblox datatype. Rebuilt per call so an assertion cannot compare a value
+ * against itself.
+ */
+function remoteCall(): RemoteCall {
+    return {
+        id: 3,
+        direction: "Outgoing",
+        remote: {
+            id: "remote-1",
+            class: "RemoteEvent",
+            name: "Fire",
+            path: "ReplicatedStorage.Remotes.Fire",
+        },
+        method: "FireServer",
+        arguments: [
+            { type: "Nil" },
+            { type: "Bool", content: true },
+            { type: "Number", content: -0.5 },
+            { type: "String", content: new Uint8Array([0, 128, 255]) },
+            {
+                type: "Table",
+                content: {
+                    id: 0,
+                    array: [{ type: "Number", content: 1 }, { type: "Cycle", content: 0 }],
+                    entries: [
+                        {
+                            key: { type: "Opaque", content: "thread" },
+                            value: { type: "Roblox", content: { type: "Vector3", content: { X: 1, Y: 2, Z: 3 } } },
+                        },
+                    ],
+                    truncated: true,
+                    metatable: true,
+                },
+            },
+            {
+                type: "Instance",
+                content: { id: "part-1", class: "Part", name: "Brick", path: "Workspace.Brick" },
+            },
+            { type: "Buffer", content: new Uint8Array([1, 2, 3]) },
+            { type: "Function", content: { name: "send", chunk: "Main", line: 12 } },
+        ],
+        returns: undefined,
+        source: {
+            script: "Players.Builder Man.PlayerScripts.Main",
+            functionName: "send",
+            chunk: "Main",
+            line: 40,
+            isExecutor: false,
+            actor: undefined,
+        },
+        timestamp: 1234.5,
+    };
+}
+
 const binary = brokerBinary();
 const PLAYER = "Builder Man";
 
@@ -222,6 +280,19 @@ describe(
 
         it("greets a syncing client with Hello", async () => {
             assert.equal((await client.next("Hello")).type, "Hello");
+        });
+
+        it("hands the client its spy orders before it asks", async () => {
+            // Unbidden and right after Hello, so a client joining an already-armed
+            // broker starts capturing without a round trip.
+            const armed = await client.next("Spy");
+            assert.deepEqual(armed, {
+                type: "Spy",
+                content: {
+                    enabled: false, outgoing: true, incoming: true, bindables: false,
+                    maxDepth: 6, maxEntries: 128, maxBytes: 4096,
+                },
+            });
         });
 
         it("announces the new session, named, on the control connection", async () => {
@@ -403,6 +474,56 @@ describe(
             }
             assert.equal(answered.content.request, 43);
             assert.equal(answered.content.result.type, "Err");
+        });
+
+        it("pushes a spy config change at the live sessions", async () => {
+            control.send({
+                type: "SetSpy",
+                content: {
+                    enabled: true, outgoing: true, incoming: false, bindables: true,
+                    maxDepth: 3, maxEntries: 16, maxBytes: 64,
+                },
+            });
+
+            const armed = await client.next("Spy");
+            assert.deepEqual(armed, {
+                type: "Spy",
+                content: {
+                    enabled: true, outgoing: true, incoming: false, bindables: true,
+                    maxDepth: 3, maxEntries: 16, maxBytes: 64,
+                },
+            });
+        });
+
+        it("relays a captured remote batch to the control connection", async () => {
+            client.send({ type: "RemoteCalls", content: [remoteCall()] });
+
+            const relayed = await control.next("SessionRemotes");
+            assert.deepEqual(relayed, {
+                type: "SessionRemotes",
+                content: { id: sessionId, calls: [remoteCall()] },
+            });
+        });
+
+        it("replays the remote history only when asked, and drops it on request", async () => {
+            // Nothing arrives unbidden: the live batch above was the last push.
+            control.send({ type: "ListSessions" });
+            assert.equal((await control.next("Sessions")).type, "Sessions");
+
+            control.send({ type: "RequestRemotes" });
+            assert.deepEqual(await control.next("SessionRemotes"), {
+                type: "SessionRemotes",
+                content: { id: sessionId, calls: [remoteCall()] },
+            });
+
+            control.send({ type: "ClearRemotes" });
+            assert.deepEqual(await control.next("RemotesCleared"), { type: "RemotesCleared" });
+
+            // Cleared for real: the replay has nothing to send, so the
+            // ListSessions answer arrives with no batch ahead of it.
+            control.send({ type: "RequestRemotes" });
+            control.send({ type: "ListSessions" });
+            assert.equal((await control.next("Sessions")).type, "Sessions");
         });
 
         it("announces the removal when the client disconnects", async () => {

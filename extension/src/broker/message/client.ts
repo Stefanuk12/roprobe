@@ -3,6 +3,7 @@ import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
 import { domPatch, type DomPatch } from "./dom";
 import { logEntries, type LogEntry } from "./log";
 import { enumFamilies, opResult, type EnumFamily, type OpResult } from "./operation";
+import { remoteCalls, spyConfig, type RemoteCall, type SpyConfig } from "./remote";
 import { str, taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
 
@@ -41,9 +42,11 @@ export type ClientMessage =
     | { type: "RequestActive" }
     /** A batch of the client's console output, relayed on to the control connections. */
     | { type: "Log"; content: LogEntry[] }
-    
+    /** A batch of remote calls the client's spy captured; the client keeps no copy. */
+    | { type: "RemoteCalls"; content: RemoteCall[] }
+
     /** Control messages */
-    
+
     /** Control-only: make the session with the given id active. */
     | { type: "SwapActive"; content: SessionId }
     /** Control-only: ask for the connected-session list, answered with a `ServerMessage::Sessions`. */
@@ -53,7 +56,13 @@ export type ClientMessage =
     /** Control-only: ask for the buffered console history, answered with one `SessionLog` per run of lines. */
     | { type: "RequestLogs" }
     /** Control-only: compile and run `source` on the given session, answered with a `ServerMessage::RunResult`. */
-    | { type: "RunCode"; content: RunRequest };
+    | { type: "RunCode"; content: RunRequest }
+    /** Control-only: ask for the buffered remote-call history, answered with one `SessionRemotes` per run of calls. */
+    | { type: "RequestRemotes" }
+    /** Control-only: drop the buffered remote-call history, echoed to every control connection as `RemotesCleared`. */
+    | { type: "ClearRemotes" }
+    /** Control-only: change what the sessions capture, pushed on to each of them as a `ServerMessage::Spy`. */
+    | { type: "SetSpy"; content: SpyConfig };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationResponse: SerDes<OperationResponse> = {
@@ -105,11 +114,15 @@ export const clientMessage: SerDes<ClientMessage> = taggedUnion<ClientMessage>([
     { type: "OperationResult", content: operationResponse },
     { type: "RequestActive" },
     { type: "Log", content: logEntries },
+    { type: "RemoteCalls", content: remoteCalls },
     { type: "SwapActive", content: u32 },
     { type: "ListSessions" },
     { type: "SetSecurity", content: securityChange },
     { type: "RequestLogs" },
     { type: "RunCode", content: runRequest },
+    { type: "RequestRemotes" },
+    { type: "ClearRemotes" },
+    { type: "SetSpy", content: spyConfig },
 ]);
 
 /** Encode a [`ClientMessage`] into a base64 text frame for the broker. */

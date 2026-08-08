@@ -5,6 +5,7 @@ local DomWatch = require("@features/broker/DomWatch")
 local Logger = require("@engine/Logger")
 local Messages = require("@lib/Messages")
 local Operations = require("@features/broker/operations")
+local RemoteSpy = require("@features/remoteSpy")
 local Trove = require("@pkgs/trove")
 local WebSocketClient = require("@engine/WebSocketClient")
 
@@ -14,6 +15,17 @@ local Players = cloneref(game:GetService("Players"))
 
 --- Default path to the broker handshake lockfile (port + auth token).
 local DEFAULT_LOCKFILE = "roprobe/broker.json"
+
+--- What the spy starts on, hooked to nothing until the broker pushes a config.
+local IDLE_SPY: Messages.SpyConfig = {
+    enabled = false,
+    outgoing = true,
+    incoming = true,
+    bindables = false,
+    maxDepth = 6,
+    maxEntries = 128,
+    maxBytes = 4096,
+}
 
 --- Manages the single link to the broker via WebSocket.
 local Broker = {}
@@ -42,6 +54,7 @@ export type BrokerData = {
     _config: Config,
     _sync: DomSync.DomSync,
     _watch: DomWatch.DomWatch?,
+    _spy: RemoteSpy.RemoteSpy?,
     _ws: WebSocketClient.WebSocketClient?,
     _reconnectThread: thread?,
     _upstreams: { [Upstream]: boolean },
@@ -112,6 +125,7 @@ function Broker.new(config: Config?): Broker
         _config = resolved,
         _sync = DomSync.new(),
         _watch = nil,
+        _spy = nil,
         _ws = nil,
         _reconnectThread = nil,
         _upstreams = {
@@ -237,6 +251,8 @@ function Broker._dispatch(self: Broker, message: Messages.ServerMessage)
         self:_onRequestNodes(message.content)
     elseif message.type == "Operation" then
         self:_onOperation(message.content)
+    elseif message.type == "Spy" then
+        self:_onSpy(message.content)
     else
         Logger:Warn("broker", `unhandled message {message.type}`)
     end
@@ -351,6 +367,17 @@ function Broker._onRequestNodes(self: Broker, ids: { string })
     end
 end
 
+--- Adopt the capture settings the broker pushed, arming or disarming the spy.
+function Broker._onSpy(self: Broker, config: Messages.SpyConfig)
+    local spy = self._spy
+    if not spy then
+        return
+    end
+
+    Logger:Debug("broker", `spy config: enabled={config.enabled}`)
+    spy:Configure(config)
+end
+
 --- The broker said hello :)
 function Broker._onHello(self: Broker)
     self.isConnected = true
@@ -361,6 +388,21 @@ function Broker._onHello(self: Broker)
     for upstream, enabled in self._upstreams do
         self:_send({ type = "SetUpstream" :: "SetUpstream", content = { upstream = upstream, enabled = enabled } })
     end
+
+    -- Idle until the broker's `Spy` message says otherwise, so the game's
+    -- metamethods are only touched once someone has asked.
+    local spy = self._connectionTrove:Add(RemoteSpy.new(IDLE_SPY, function(instance: Instance)
+        return self._sync:IdOf(instance)
+    end))
+    self._spy = spy
+    self._connectionTrove:Add(
+        spy.onBatch:Connect(function(calls: { Messages.RemoteCall })
+            local count = #calls
+            Logger:Debug("broker", `relaying {count} remote call(s)`)
+            self:_send({ type = "RemoteCalls" :: "RemoteCalls", content = calls })
+        end),
+        "Disconnect"
+    )
 
     -- Relay console output only while connected.
     local console = self._connectionTrove:Add(ConsoleRelay.new())
@@ -436,6 +478,7 @@ function Broker._onDisconnected(self: Broker)
 
     self._connectionTrove:Clean()
     self._watch = nil
+    self._spy = nil
 
     if self.isRunning then
         Logger:Info("broker", "disconnected, reconnecting")

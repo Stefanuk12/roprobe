@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use squash::ReverseDeserialize;
 
-use super::{DomId, LogEntry, OpResult, Operation};
+use super::{DomId, LogEntry, OpResult, Operation, RemoteCall, SpyConfig};
 use crate::{server::SessionId, upstream::Upstream};
 
 /// Contains all the possible outbound events to a client.
@@ -24,6 +24,9 @@ pub enum ServerMessage {
     RequestNodes(Vec<DomId>),
     /// Relay an upstream (verde) operation for the client to apply against the real game, `id` correlating the [`super::ClientMessage::OperationResult`] the client replies with.
     Operation { id: u32, op: Operation },
+    /// Tell the client what its remote spy should capture, pushed on connect and
+    /// whenever a control connection changes it.
+    Spy(SpyConfig),
     /// Answer to [`super::ClientMessage::ListSessions`] (only sent to control connections): the connected sessions and which one is active.
     Sessions(Vec<SessionInfo>),
 
@@ -44,6 +47,14 @@ pub enum ServerMessage {
         request: u32,
         result: OpResult,
     },
+    /// CONTROL: A batch of remote calls the session with the given id captured.
+    SessionRemotes {
+        id: SessionId,
+        calls: Vec<RemoteCall>,
+    },
+    /// CONTROL: The buffered remote-call history was dropped, so every control
+    /// connection empties its view.
+    RemotesCleared,
 }
 
 /// One connected client session as reported to the `sessions` command.
@@ -165,17 +176,17 @@ mod tests {
             vec![7, 0, 0, 0, 0, b'p', 1, 1, 3],
         );
 
-        // Sessions is a Vec: elements reversed, VLQ count last, then tag 8.
+        // Sessions is a Vec: elements reversed, VLQ count last, then tag 9.
         assert_eq!(
             ServerMessage::Sessions(vec![named.clone()])
                 .to_bytes()
                 .unwrap(),
-            [expected.clone(), vec![1, 8]].concat(),
+            [expected.clone(), vec![1, 9]].concat(),
         );
-        // NewSession carries one straight, tag 9 last.
+        // NewSession carries one straight, tag 10 last.
         assert_eq!(
             ServerMessage::NewSession(named.clone()).to_bytes().unwrap(),
-            [expected, vec![9]].concat(),
+            [expected, vec![10]].concat(),
         );
 
         // Read back, not just written: the `sessions` command decodes these, and a
@@ -200,7 +211,7 @@ mod tests {
     }
 
     /// Pins [`ServerMessage::SessionLog`]'s frame: a struct variant, so `entries`
-    /// lands before `id` with tag 11 last.
+    /// lands before `id` with tag 12 last.
     #[test]
     fn session_log_wire_layout_is_pinned() {
         use crate::protocol::{LogEntry, LogLevel};
@@ -216,12 +227,12 @@ mod tests {
             .to_bytes()
             .unwrap(),
             // entry (level tag 2, then "a"), entries VLQ count, id (u32 LE), tag.
-            vec![2, b'a', 1, 1, 7, 0, 0, 0, 11],
+            vec![2, b'a', 1, 1, 7, 0, 0, 0, 12],
         );
     }
 
     /// Pins [`ServerMessage::RunResult`]'s frame: a struct variant, so its fields
-    /// land reversed (`result`, `request`, `session`) with tag 12 last.
+    /// land reversed (`result`, `request`, `session`) with tag 13 last.
     #[test]
     fn run_result_wire_layout_is_pinned() {
         assert_eq!(
@@ -233,8 +244,61 @@ mod tests {
             .to_bytes()
             .unwrap(),
             // "x" then OpResult tag 3, request (u32 LE), session (u32 LE), tag.
-            vec![b'x', 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 12],
+            vec![b'x', 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 13],
         );
+    }
+
+    /// Pins [`ServerMessage::Spy`] at tag 8, the last variant the Luau client
+    /// mirrors, so the control-only tags after it shift with it.
+    #[test]
+    fn spy_wire_layout_is_pinned() {
+        use crate::protocol::SpyConfig;
+
+        let config = SpyConfig::default();
+        assert_eq!(
+            ServerMessage::Spy(config).to_bytes().unwrap(),
+            [squash::serde_serialize(&config).unwrap(), vec![8]].concat(),
+        );
+    }
+
+    /// Pins [`ServerMessage::SessionRemotes`]'s frame: a struct variant, so
+    /// `calls` lands before `id` with tag 14 last, plus the bare tag 15 beside it.
+    #[test]
+    fn session_remotes_wire_layout_is_pinned() {
+        use crate::protocol::{CallSource, InstanceRef, LuaValue, RemoteCall, RemoteDirection};
+
+        let call = RemoteCall {
+            id: 1,
+            direction: RemoteDirection::Incoming,
+            remote: InstanceRef {
+                id: "i".into(),
+                class: "C".into(),
+                name: "N".into(),
+                path: "P".into(),
+            },
+            method: "M".into(),
+            arguments: vec![LuaValue::Nil],
+            returns: None,
+            source: CallSource::default(),
+            timestamp: 0.0,
+        };
+        assert_eq!(
+            (ServerMessage::SessionRemotes {
+                id: SessionId(7),
+                calls: vec![call.clone()],
+            })
+            .to_bytes()
+            .unwrap(),
+            [
+                squash::serde_serialize(&call).unwrap(),
+                vec![1],            // calls VLQ count
+                vec![7, 0, 0, 0],   // id (u32 LE)
+                vec![14],
+            ]
+            .concat(),
+        );
+
+        assert_eq!(ServerMessage::RemotesCleared.to_bytes().unwrap(), vec![15]);
     }
 
     /// Pins [`ServerMessage::Operation`]'s frame: a struct variant whose fields land reversed (`op` before `id`) with tag 7 last, the `op` payload a typed [`Operation`] mirrored by hand in the Luau `operationFrame` codec.

@@ -6,7 +6,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const OUT_DIR = path.join(__dirname, "dist", "test");
-const SUITES = ["conformance", "broker"];
+const SUITES = ["conformance", "broker", "format"];
 
 const bundles = [];
 for (const suite of SUITES) {

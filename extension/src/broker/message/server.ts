@@ -2,6 +2,7 @@ import type { SerDes } from "squash-ts";
 import { upstreamState, type SessionId, type UpstreamState } from "./upstream";
 import { logEntries, type LogEntry } from "./log";
 import { operation, opResult, type Operation, type OpResult } from "./operation";
+import { remoteCalls, spyConfig, type RemoteCall, type SpyConfig } from "./remote";
 import { boolean, optStr, serdeArray, str, strArray, taggedUnion, u32, u8 } from "./serde";
 import { fromBytes, textDecode, textEncode, toBytes } from "./transport";
 import type { DomId } from "./variant";
@@ -31,6 +32,12 @@ export interface RunOutcome {
     result: OpResult;
 }
 
+/** Mirrors `SessionRemotes`'s `{ id, calls }` payload: remote calls one session captured. */
+export interface SessionRemotesBatch {
+    id: SessionId;
+    calls: RemoteCall[];
+}
+
 /** One connected client session as reported to the `sessions` command. */
 export interface SessionInfo {
     id: SessionId;
@@ -58,11 +65,13 @@ export type ServerMessage =
     | { type: "RequestNodes"; content: DomId[] }
     /** Relay an upstream operation for the client to apply against the real game. */
     | { type: "Operation"; content: OperationRequest }
+    /** Tell the client what its remote spy should capture. */
+    | { type: "Spy"; content: SpyConfig }
     /** Answer to `ClientMessage::ListSessions` (control connections only). */
     | { type: "Sessions"; content: SessionInfo[] }
-    
+
     /** Control messages */
-    
+
     /** Control-only: a new session was added, described in full so it can be named on sight. */
     | { type: "NewSession"; content: SessionInfo }
     /** Control-only: a session was removed. */
@@ -70,7 +79,11 @@ export type ServerMessage =
     /** Control-only: a batch of console output relayed from the given session. */
     | { type: "SessionLog"; content: SessionLogBatch }
     /** Control-only: the outcome of a `ClientMessage::RunCode` we sent. */
-    | { type: "RunResult"; content: RunOutcome };
+    | { type: "RunResult"; content: RunOutcome }
+    /** Control-only: a batch of remote calls the given session captured. */
+    | { type: "SessionRemotes"; content: SessionRemotesBatch }
+    /** Control-only: the buffered remote-call history was dropped, so every control connection empties its view. */
+    | { type: "RemotesCleared" };
 
 /** A struct variant, so the fields land on the wire reversed. */
 const operationRequest: SerDes<OperationRequest> = {
@@ -126,6 +139,19 @@ const runOutcome: SerDes<RunOutcome> = {
     },
 };
 
+/** A struct variant, so the fields land on the wire reversed. */
+const sessionRemotesBatch: SerDes<SessionRemotesBatch> = {
+    ser(cursor, batch) {
+        remoteCalls.ser(cursor, batch.calls);
+        u32.ser(cursor, batch.id);
+    },
+
+    des(cursor) {
+        const id = u32.des(cursor);
+        return { id, calls: remoteCalls.des(cursor) };
+    },
+};
+
 /** A plain struct, so `ser` runs forward and `des` in reverse. `SessionId` is a newtype over `u32`. */
 const sessionInfo: SerDes<SessionInfo> = {
     ser(cursor, info) {
@@ -156,11 +182,14 @@ export const serverMessage: SerDes<ServerMessage> = taggedUnion<ServerMessage>([
     { type: "Search", content: searchQuery },
     { type: "RequestNodes", content: strArray },
     { type: "Operation", content: operationRequest },
+    { type: "Spy", content: spyConfig },
     { type: "Sessions", content: serdeArray(sessionInfo) },
     { type: "NewSession", content: sessionInfo },
     { type: "RemoveSession", content: u32 },
     { type: "SessionLog", content: sessionLogBatch },
     { type: "RunResult", content: runOutcome },
+    { type: "SessionRemotes", content: sessionRemotesBatch },
+    { type: "RemotesCleared" },
 ]);
 
 /** Decode a base64 text frame from the broker, throwing on a malformed or unknown frame. */

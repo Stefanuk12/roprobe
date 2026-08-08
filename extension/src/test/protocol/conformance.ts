@@ -9,17 +9,27 @@ import {
     domUpdate,
     domValue,
     fromBytes,
+    luaTable,
+    luaValue,
     operation,
     opResult,
+    remoteCall,
     serverMessage,
+    spyConfig,
     tagChange,
     toBytes,
+    type CallSource,
     type CFrameComponents,
     type ClientMessage,
     type DomValue,
+    type InstanceRef,
+    type LuaTable,
+    type LuaValue,
     type Operation,
     type OpResult,
+    type RemoteCall,
     type ServerMessage,
+    type SpyConfig,
     type TagChange,
 } from "../../broker/message";
 
@@ -53,6 +63,12 @@ function i16rev(values: number[]): number[] {
     return out;
 }
 
+function f64le(value: number): number[] {
+    const bytes = new Uint8Array(8);
+    new DataView(bytes.buffer).setFloat64(0, value, true);
+    return [...bytes];
+}
+
 /** Assert the frame `value` encodes to, then that the same frame decodes and re-encodes identically. */
 function pin<T>(serdes: SerDes<T>, value: T, expected: number[]): void {
     assert.deepEqual(Array.from(toBytes(serdes, value)), expected, "encoded frame");
@@ -60,12 +76,53 @@ function pin<T>(serdes: SerDes<T>, value: T, expected: number[]): void {
     assert.deepEqual(Array.from(toBytes(serdes, decoded)), expected, "frame after a round-trip");
 }
 
+// Remote-spy fixtures, shared by the message pins and the shape pins below.
+
+const REMOTE: InstanceRef = { id: "i", class: "C", name: "N", path: "P" };
+const REMOTE_BYTES = [b("i"), 1, b("C"), 1, b("N"), 1, b("P"), 1];
+
+const NO_SOURCE: CallSource = {
+    script: undefined, functionName: undefined, chunk: undefined,
+    line: undefined, isExecutor: false, actor: undefined,
+};
+const NO_SOURCE_BYTES = [0, 0, 0, 0, 0, 0];
+
+const CALL: RemoteCall = {
+    id: 1,
+    direction: "Incoming",
+    remote: REMOTE,
+    method: "M",
+    arguments: [{ type: "Nil" }],
+    returns: undefined,
+    source: NO_SOURCE,
+    timestamp: 0,
+};
+const CALL_BYTES = [
+    1, 0, 0, 0,                 // id (u32 LE)
+    1,                          // direction (Outgoing=0, Incoming=1)
+    ...REMOTE_BYTES,
+    b("M"), 1,                  // method
+    0, 1,                       // arguments: [Nil] + VLQ count
+    0,                          // returns: None
+    ...NO_SOURCE_BYTES,
+    ...f64le(0),                // timestamp
+];
+
+/** Mirrors `SpyConfig::default()` on the broker side. */
+const DEFAULT_SPY: SpyConfig = {
+    enabled: false, outgoing: true, incoming: true, bindables: false,
+    maxDepth: 6, maxEntries: 128, maxBytes: 4096,
+};
+const SPY_BYTES = [0, 1, 1, 0, 6, 128, 0, 0, 16, 0, 0];
+
 describe("ClientMessage", () => {
     it("encodes unit variants as a single tag byte", () => {
         pin<ClientMessage>(clientMessage, { type: "Shutdown" }, [0]);
         pin<ClientMessage>(clientMessage, { type: "RequestActive" }, [5]);
-        pin<ClientMessage>(clientMessage, { type: "ListSessions" }, [8]);
-        pin<ClientMessage>(clientMessage, { type: "RequestLogs" }, [10]);
+        pin<ClientMessage>(clientMessage, { type: "ListSessions" }, [9]);
+        pin<ClientMessage>(clientMessage, { type: "RequestLogs" }, [11]);
+        pin<ClientMessage>(clientMessage, { type: "RequestRemotes" }, [13]);
+        pin<ClientMessage>(clientMessage, { type: "ClearRemotes" }, [14]);
     });
 
     it("encodes a console batch", () => {
@@ -92,13 +149,21 @@ describe("ClientMessage", () => {
             [0, 1, 0, 0, 0, 4],
         );
         // SessionId is a newtype over u32.
-        pin<ClientMessage>(clientMessage, { type: "SwapActive", content: 7 }, [7, 0, 0, 0, 7]);
-        pin<ClientMessage>(clientMessage, { type: "SetSecurity", content: { id: 7, level: 3 } }, [3, 7, 0, 0, 0, 9]);
+        pin<ClientMessage>(clientMessage, { type: "SwapActive", content: 7 }, [7, 0, 0, 0, 8]);
+        pin<ClientMessage>(clientMessage, { type: "SetSecurity", content: { id: 7, level: 3 } }, [3, 7, 0, 0, 0, 10]);
         pin<ClientMessage>(
             clientMessage,
             { type: "RunCode", content: { session: 7, request: 1, source: "s" } },
-            [b("s"), 1, 1, 0, 0, 0, 7, 0, 0, 0, 11],
+            [b("s"), 1, 1, 0, 0, 0, 7, 0, 0, 0, 12],
         );
+    });
+
+    it("encodes a batch of captured remote calls", () => {
+        pin<ClientMessage>(clientMessage, { type: "RemoteCalls", content: [CALL] }, [...CALL_BYTES, 1, 7]);
+    });
+
+    it("encodes the spy config", () => {
+        pin<ClientMessage>(clientMessage, { type: "SetSpy", content: DEFAULT_SPY }, [...SPY_BYTES, 15]);
     });
 
     it("encodes the enum catalog", () => {
@@ -282,37 +347,126 @@ describe("ServerMessage", () => {
             { type: "Operation", content: { id: 1, op: { type: "Delete", content: { node: "n" } } } },
             [b("n"), 1, 1, 1, 0, 0, 0, 7],
         ],
+        ["Spy", { type: "Spy", content: DEFAULT_SPY }, [...SPY_BYTES, 8]],
         [
             "NewSession",
             { type: "NewSession", content: { id: 7, username: "N", peer: "p", active: true, securityLevel: 3 } },
-            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 9],
+            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 10],
         ],
-        ["RemoveSession", { type: "RemoveSession", content: 7 }, [7, 0, 0, 0, 10]],
+        ["RemoveSession", { type: "RemoveSession", content: 7 }, [7, 0, 0, 0, 11]],
         [
             "Sessions",
             { type: "Sessions", content: [{ id: 7, username: "N", peer: "p", active: true, securityLevel: 3 }] },
-            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 1, 8],
+            [7, 0, 0, 0, b("N"), 1, 1, b("p"), 1, 1, 3, 1, 9],
         ],
         [
             "Sessions (a client that did not name itself)",
             { type: "Sessions", content: [{ id: 7, username: undefined, peer: "p", active: true, securityLevel: 3 }] },
-            [7, 0, 0, 0, 0, b("p"), 1, 1, 3, 1, 8],
+            [7, 0, 0, 0, 0, b("p"), 1, 1, 3, 1, 9],
         ],
         [
             "SessionLog",
             { type: "SessionLog", content: { id: 7, entries: [{ level: "warn", content: "a" }] } },
-            [2, b("a"), 1, 1, 7, 0, 0, 0, 11],
+            [2, b("a"), 1, 1, 7, 0, 0, 0, 12],
         ],
         [
             "RunResult",
             { type: "RunResult", content: { session: 7, request: 1, result: { type: "Output", content: "x" } } },
-            [b("x"), 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 12],
+            [b("x"), 1, 3, 1, 0, 0, 0, 7, 0, 0, 0, 13],
         ],
+        [
+            "SessionRemotes",
+            { type: "SessionRemotes", content: { id: 7, calls: [CALL] } },
+            [...CALL_BYTES, 1, 7, 0, 0, 0, 14],
+        ],
+        ["RemotesCleared", { type: "RemotesCleared" }, [15]],
     ];
 
     for (const [label, value, expected] of cases) {
         it(`pins ${label}`, () => pin(serverMessage, value, expected));
     }
+});
+
+describe("LuaValue", () => {
+    const cases: Array<[string, LuaValue, number[]]> = [
+        ["Nil", { type: "Nil" }, [0]],
+        ["Bool", { type: "Bool", content: true }, [1, 1]],
+        ["Number", { type: "Number", content: 1.5 }, [...f64le(1.5), 2]],
+        // A string rides raw bytes + a VLQ length, so a non-UTF-8 payload survives.
+        ["String", { type: "String", content: new Uint8Array([0, 255]) }, [0, 255, 2, 3]],
+        ["Instance", { type: "Instance", content: REMOTE }, [...REMOTE_BYTES, 5]],
+        // A Roblox datatype nests DomValue whole: its payload, its own tag, then ours.
+        ["Roblox", { type: "Roblox", content: { type: "Bool", content: true } }, [1, 0, 6]],
+        ["Buffer", { type: "Buffer", content: new Uint8Array([7]) }, [7, 1, 7]],
+        [
+            "Function",
+            { type: "Function", content: { name: "f", chunk: undefined, line: undefined } },
+            [b("f"), 1, 1, 0, 0, 8],
+        ],
+        ["Cycle", { type: "Cycle", content: 3 }, [3, 0, 0, 0, 9]],
+        ["Opaque", { type: "Opaque", content: "thread" }, [...[..."thread"].map(b), 6, 10]],
+    ];
+
+    for (const [label, value, expected] of cases) {
+        it(`pins ${label}`, () => pin(luaValue, value, expected));
+    }
+
+    it("pins a table, whose fields land forward with each Vec reversed and counted last", () => {
+        const table: LuaTable = {
+            id: 1,
+            array: [{ type: "Bool", content: false }],
+            entries: [{ key: { type: "String", content: new Uint8Array([b("k")]) }, value: { type: "Nil" } }],
+            truncated: true,
+            metatable: false,
+        };
+        pin(luaTable, table, [
+            1, 0, 0, 0,         // id (u32 LE)
+            0, 1,               // array[0]: Bool(false)
+            1,                  // array VLQ count
+            b("k"), 1, 3,       // entries[0].key: String("k")
+            0,                  // entries[0].value: Nil
+            1,                  // entries VLQ count
+            1,                  // truncated
+            0,                  // metatable
+        ]);
+
+        // Nested whole inside the Table variant, tag 4 last.
+        pin<LuaValue>(
+            luaValue,
+            { type: "Table", content: { id: 0, array: [], entries: [], truncated: false, metatable: false } },
+            [0, 0, 0, 0, 0, 0, 0, 0, 4],
+        );
+    });
+});
+
+describe("RemoteCall", () => {
+    it("pins a call, a plain struct whose fields land forward", () => {
+        pin(remoteCall, CALL, CALL_BYTES);
+    });
+
+    it("pins a call site, where a missing field collapses to a lone flag", () => {
+        pin<RemoteCall>(
+            remoteCall,
+            {
+                ...CALL,
+                source: { ...NO_SOURCE, script: "s", line: 7, isExecutor: true },
+                returns: [{ type: "Bool", content: true }],
+            },
+            [
+                1, 0, 0, 0, 1, ...REMOTE_BYTES, b("M"), 1, 0, 1,
+                1, 1, 1, 1,         // returns: Some([Bool(true)]) -> value, VLQ count, Some flag
+                b("s"), 1, 1,       // script: Some
+                0,                  // functionName: None
+                0,                  // chunk: None
+                7, 0, 0, 0, 1,      // line: Some(7)
+                1,                  // isExecutor
+                0,                  // actor: None
+                ...f64le(0),
+            ],
+        );
+    });
+
+    it("pins the spy config", () => pin(spyConfig, DEFAULT_SPY, SPY_BYTES));
 });
 
 describe("Operation", () => {

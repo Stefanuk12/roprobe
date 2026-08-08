@@ -1,14 +1,13 @@
 -- Dependencies
 local Squash = require("@pkgs/squash")
+local enumVariant = require("@contracts/enumVariant")
 
 -- Vars
 local u8 = Squash.u8()
 
 -- Types
-export type EnumVariant<T, C = nil> = {
-    type: T,
-    content: C,
-}
+--- Re-exported from the contract, which names it without dragging Squash along.
+export type EnumVariant<T, C = nil> = enumVariant.EnumVariant<T, C>
 type VariantSpec = {
     type: any,
     content: Squash.SerDes<any>?,

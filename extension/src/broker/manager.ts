@@ -10,6 +10,7 @@ import {
     type OpResult,
     type ServerMessage,
     type SessionId,
+    type SpyConfig,
 } from "./message";
 import { ExectionChannelHandler } from "../execution_channel_handler";
 
@@ -32,8 +33,11 @@ interface BrokerConfig {
 }
 
 const LOCKFILE = path.join(os.tmpdir(), "roprobe", "broker.json");
-const CONFIG_SECTION = "roprobe";
+export const CONFIG_SECTION = "roprobe";
 const RECONNECT_ON_CHANGE = ["roprobe.broker", "roprobe.upstream", "roprobe.securityLevel"];
+/// Re-armed in place rather than reconnected: a config change must not cost the
+/// session its DOM mirror.
+const SPY_SECTION = "roprobe.spy";
 const SECURITY_ORDINALS: Record<SecurityLevel, number> = {
     "none": 0,
     "plugin": 1,
@@ -48,6 +52,26 @@ const RECONNECT_DELAY_MS = 1_000;
 const RUN_STALLED_MS = 10_000;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/// What the sessions should capture, from settings. The caps are clamped to the
+/// `u8`/`u16`/`u32` they ride as, which would wrap rather than reject.
+export function readSpyConfig(): SpyConfig {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    // `"type": "integer"` only drives the editor, so a hand-edited string arrives
+    // as one and would clamp to `NaN`, reaching the wire as a silent zero.
+    const clamp = (value: number, fallback: number, max: number) =>
+        Number.isFinite(value) ? Math.max(0, Math.min(Math.trunc(value), max)) : fallback;
+
+    return {
+        enabled: config.get<boolean>("spy.enabled", false),
+        outgoing: config.get<boolean>("spy.outgoing", true),
+        incoming: config.get<boolean>("spy.incoming", true),
+        bindables: config.get<boolean>("spy.bindables", false),
+        maxDepth: clamp(config.get<number>("spy.maxDepth", 6), 6, 0xff),
+        maxEntries: clamp(config.get<number>("spy.maxEntries", 128), 128, 0xffff),
+        maxBytes: clamp(config.get<number>("spy.maxBytes", 4096), 4096, 0xffffffff),
+    };
+}
 
 function readConfig(): BrokerConfig {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
@@ -123,6 +147,9 @@ export class BrokerManager implements vscode.Disposable {
         this.log = log;
         this.executionChannels = new ExectionChannelHandler(ctx);
         this.configWatcher = vscode.workspace.onDidChangeConfiguration((ev) => {
+            if (ev.affectsConfiguration(SPY_SECTION)) {
+                this.applySpyConfig();
+            }
             if (!RECONNECT_ON_CHANGE.some((section) => ev.affectsConfiguration(section))) {
                 return;
             }
@@ -148,9 +175,20 @@ export class BrokerManager implements vscode.Disposable {
         // Spawn args only reach a broker we spawned, so state the upstream we want either way.
         this.send({ type: "SetUpstream", content: { upstream: "Verde", enabled: config.verde } });
 
+        // A broker we did not spawn may already be armed differently.
+        this.applySpyConfig();
+
         // Grab all current sessions with any relevant data
         this.send({ type: "ListSessions" });
         this.send({ type: "RequestLogs" });
+        this.send({ type: "RequestRemotes" });
+    }
+
+    /// Push the capture settings at the broker, which relays them to its sessions.
+    applySpyConfig(): void {
+        const spy = readSpyConfig();
+        this.log.info(`Spy: ${spy.enabled ? "arming" : "disarming"} every session`);
+        this.send({ type: "SetSpy", content: spy });
     }
 
     /// Send a message to the broker.

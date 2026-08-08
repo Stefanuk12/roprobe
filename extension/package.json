@@ -34,6 +34,59 @@
         "title": "Select Target Client",
         "category": "roprobe",
         "icon": "$(vm)"
+      },
+      {
+        "command": "roprobe.toggleRemoteSpy",
+        "title": "Toggle Remote Spy",
+        "category": "roprobe",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "roprobe.clearRemotes",
+        "title": "Clear Captured Remotes",
+        "category": "roprobe",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "roprobe.copyRemoteCall",
+        "title": "Copy Call as Luau",
+        "category": "roprobe",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "roprobe.showRemoteCall",
+        "title": "Show Remote Call",
+        "category": "roprobe"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "roprobe",
+          "title": "roprobe",
+          "icon": "$(telescope)"
+        }
+      ]
+    },
+    "views": {
+      "roprobe": [
+        {
+          "id": "roprobe.remotes",
+          "name": "Remote Spy",
+          "icon": "$(radio-tower)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "roprobe.remotes",
+        "contents": "The remote spy is not watching anything yet.\n\nArm it to capture every remote the connected clients fire and receive.\n[Arm the Remote Spy](command:roprobe.toggleRemoteSpy)",
+        "when": "config.roprobe.spy.enabled == false"
+      },
+      {
+        "view": "roprobe.remotes",
+        "contents": "Watching for remote calls. Nothing has crossed yet — they appear here as the game fires them.\n[Disarm the Remote Spy](command:roprobe.toggleRemoteSpy)",
+        "when": "config.roprobe.spy.enabled"
       }
     ],
     "menus": {
@@ -41,6 +94,33 @@
         {
           "command": "roprobe.runActiveFile",
           "when": "editorLangId == luau || editorLangId == lua || resourceExtname == .luau || resourceExtname == .lua"
+        },
+        {
+          "command": "roprobe.showRemoteCall",
+          "when": "false"
+        },
+        {
+          "command": "roprobe.copyRemoteCall",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "roprobe.toggleRemoteSpy",
+          "when": "view == roprobe.remotes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "roprobe.clearRemotes",
+          "when": "view == roprobe.remotes",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "roprobe.copyRemoteCall",
+          "when": "view == roprobe.remotes && viewItem == roprobe.remoteCall",
+          "group": "inline"
         }
       ],
       "editor/title/run": [
@@ -131,6 +211,47 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Reveal the Output panel when the session whose console output is redirected changes."
+        },
+        "roprobe.spy.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Capture every remote each connected client fires and receives. Off leaves the game's metamethods untouched; applied to each session as it connects, and to the connected ones as soon as it changes."
+        },
+        "roprobe.spy.outgoing": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Capture calls the client makes (`FireServer`, `InvokeServer`)."
+        },
+        "roprobe.spy.incoming": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Capture calls the server makes (`OnClientEvent`, `OnClientInvoke`)."
+        },
+        "roprobe.spy.bindables": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Capture `BindableEvent`/`BindableFunction` alongside the networked remotes. These never leave the client, so they are noise unless you are chasing the game's own internals."
+        },
+        "roprobe.spy.maxDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "default": 6,
+          "markdownDescription": "How deep to walk a table argument before reporting it truncated."
+        },
+        "roprobe.spy.maxEntries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 128,
+          "markdownDescription": "How many entries of one table to capture before reporting it truncated."
+        },
+        "roprobe.spy.maxBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 4096,
+          "markdownDescription": "How many bytes of one string or buffer argument to capture."
         }
       }
     }

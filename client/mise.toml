@@ -52,9 +52,16 @@ run = "lune run .meta/scripts/sourcemap"
 sources = ["default.project.json", "src/**/*.luau"]
 outputs = [".meta/sourcemap.json"]
 
+[tasks.actor-source]
+description = "Bundle the actor half of the remote spy and stage it for embedding"
+depends = ["deps"]
+run = "lune run .meta/scripts/actor-source"
+sources = ["src/**/*.luau", ".meta/.darklua.actor.json"]
+outputs = [".meta/generated/actorSource.luau"]
+
 [tasks.check]
 description = "Check the source via luau-lsp"
-depends = ["deps", "fetch-types", "executor-types"]
+depends = ["deps", "fetch-types", "executor-types", "actor-source"]
 run = """
 luau-lsp analyze --no-flags-enabled --flag:LuauSolverV2=true --platform roblox \
     --definitions "@roblox=./roblox.d.luau" \
@@ -66,12 +73,12 @@ luau-lsp analyze --no-flags-enabled --flag:LuauSolverV2=true --platform roblox \
 
 [tasks.build]
 description = "Build the script via darklua (no args = build main)"
-depends = ["deps"]
+depends = ["deps", "actor-source"]
 run = "lune run .meta/scripts/build"
 
 [tasks.test]
 description = "Run the end-to-end tests: the client's source, sandboxed under lune, against a real broker"
-depends = ["deps"]
+depends = ["deps", "actor-source"]
 run = "lune run .meta/scripts/test"
 
 [tasks.clean]

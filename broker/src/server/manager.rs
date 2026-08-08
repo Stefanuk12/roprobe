@@ -9,12 +9,15 @@ use tokio::sync::{RwLock, broadcast, watch};
 use tracing::debug;
 
 use crate::{
-    protocol::{LogEntry, SessionInfo},
+    protocol::{LogEntry, RemoteCall, SessionInfo, SpyConfig},
     server::{DomChange, Session, SessionDom, SessionId},
 };
 
 const LOG_BUFFER: usize = 256;
 const LOG_HISTORY: usize = 1_000;
+
+const REMOTE_BUFFER: usize = 256;
+const REMOTE_HISTORY: usize = 5_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -125,6 +128,10 @@ pub struct Sessions {
     on_session_removed: Arc<broadcast::Sender<SessionId>>,
     on_log: Arc<broadcast::Sender<(SessionId, Vec<LogEntry>)>>,
     history: Arc<Mutex<VecDeque<(SessionId, LogEntry)>>>,
+    on_remotes: Arc<broadcast::Sender<(SessionId, Vec<RemoteCall>)>>,
+    on_remotes_cleared: Arc<broadcast::Sender<()>>,
+    remotes: Arc<Mutex<VecDeque<(SessionId, RemoteCall)>>>,
+    spy: Arc<Mutex<SpyConfig>>,
 }
 
 impl Default for Sessions {
@@ -142,6 +149,10 @@ impl Sessions {
             on_session_removed: Arc::new(broadcast::channel(16).0),
             on_log: Arc::new(broadcast::channel(LOG_BUFFER).0),
             history: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_HISTORY))),
+            on_remotes: Arc::new(broadcast::channel(REMOTE_BUFFER).0),
+            on_remotes_cleared: Arc::new(broadcast::channel(16).0),
+            remotes: Arc::new(Mutex::new(VecDeque::with_capacity(REMOTE_HISTORY))),
+            spy: Arc::new(Mutex::new(SpyConfig::default())),
         }
     }
 
@@ -245,6 +256,74 @@ impl Sessions {
             }
         }
         batches
+    }
+
+    /// Fan one session's captured remote calls out to the control connections.
+    pub fn broadcast_remotes(&self, id: SessionId, calls: Vec<RemoteCall>) {
+        let captured = calls.len();
+
+        {
+            let mut remotes = self.remotes.lock().expect("remote history poisoned");
+
+            for call in &calls {
+                if remotes.len() == REMOTE_HISTORY {
+                    remotes.pop_front();
+                }
+
+                remotes.push_back((id, call.clone()));
+            }
+        }
+
+        match self.on_remotes.send((id, calls)) {
+            Ok(controls) => debug!(id = id.0, captured, controls, "remote batch broadcast"),
+            Err(_) => debug!(id = id.0, captured, "remote batch buffered, no control connection"),
+        }
+    }
+
+    pub fn subscribe_remotes(&self) -> broadcast::Receiver<(SessionId, Vec<RemoteCall>)> {
+        self.on_remotes.subscribe()
+    }
+
+    /// Every buffered remote call, grouped into runs by the session that made it.
+    pub fn remote_history(&self) -> Vec<(SessionId, Vec<RemoteCall>)> {
+        let remotes = self.remotes.lock().expect("remote history poisoned");
+
+        let mut batches: Vec<(SessionId, Vec<RemoteCall>)> = Vec::new();
+        for (id, call) in remotes.iter() {
+            match batches.last_mut() {
+                Some((last, calls)) if last == id => calls.push(call.clone()),
+                _ => batches.push((*id, vec![call.clone()])),
+            }
+        }
+        batches
+    }
+
+    /// Drop the buffered remote calls, answering with how many went.
+    pub fn clear_remotes(&self) -> usize {
+        let mut remotes = self.remotes.lock().expect("remote history poisoned");
+        let dropped = remotes.len();
+        remotes.clear();
+        dropped
+    }
+
+    /// Tell every control connection the history is gone, so none keeps showing
+    /// calls the broker can no longer replay.
+    pub fn broadcast_remotes_cleared(&self) {
+        let _ = self.on_remotes_cleared.send(());
+    }
+
+    pub fn subscribe_remotes_cleared(&self) -> broadcast::Receiver<()> {
+        self.on_remotes_cleared.subscribe()
+    }
+
+    /// What sessions are currently told to capture.
+    pub fn spy(&self) -> SpyConfig {
+        *self.spy.lock().expect("spy config poisoned")
+    }
+
+    /// Change what sessions capture, for the ones connected now and any later.
+    pub fn set_spy(&self, config: SpyConfig) {
+        *self.spy.lock().expect("spy config poisoned") = config;
     }
 
     pub fn subscribe_session_added(&self) -> broadcast::Receiver<SessionInfo> {

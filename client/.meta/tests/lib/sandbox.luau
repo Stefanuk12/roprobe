@@ -14,6 +14,7 @@ local ALIASES = {
     engine = "src/engine",
     features = "src/features",
     src = "src",
+    generated = ".meta/generated",
 }
 local BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 --- pesde's roblox links are instance requires lune can't follow, so read the path out of them.

@@ -218,6 +218,23 @@ impl Server {
         );
         session.send(ServerMessage::Hello).await?;
         self.ctx.sessions.insert(session).await;
+
+        let armed = {
+            let mut guard = self.ctx.sessions.write().await;
+            let config = self.ctx.sessions.spy();
+            match guard.find_mut(id) {
+                Some(session) => session.send(ServerMessage::Spy(config)).await,
+                None => Ok(()),
+            }
+        };
+
+        // The session is in the store from here on, so a failed push unregisters it
+        // rather than returning past the removal at the end of the function.
+        if let Err(e) = armed {
+            self.ctx.sessions.remove(id).await;
+            return Err(e);
+        }
+
         let session_guard = self.ctx.controls.track_session();
 
         // Serve client frames and upstream operation relays until the socket closes.
@@ -300,6 +317,8 @@ impl Server {
         let mut on_session_added = self.ctx.sessions.subscribe_session_added();
         let mut on_session_removed = self.ctx.sessions.subscribe_session_removed();
         let mut on_log = self.ctx.sessions.subscribe_log();
+        let mut on_remotes = self.ctx.sessions.subscribe_remotes();
+        let mut on_remotes_cleared = self.ctx.sessions.subscribe_remotes_cleared();
         let (run_tx, mut run_rx) = mpsc::channel::<(SessionId, u32, OpResult)>(32);
 
         loop {
@@ -337,6 +356,26 @@ impl Server {
 
                     debug!(%peer, id = id.0, lines = entries.len(), "forwarding console batch");
                     write.send(ServerMessage::SessionLog { id, entries }.try_into()?).await?;
+                }
+                captured = on_remotes.recv() => {
+                    let (id, calls) = match captured {
+                        Ok(x) => x,
+                        Err(e) => {
+                            warn!(%e, "remote relay dropped");
+                            continue
+                        }
+                    };
+
+                    debug!(%peer, id = id.0, calls = calls.len(), "forwarding remote batch");
+                    write.send(ServerMessage::SessionRemotes { id, calls }.try_into()?).await?;
+                }
+                cleared = on_remotes_cleared.recv() => {
+                    if let Err(e) = cleared {
+                        warn!(%e, "remote-cleared relay dropped");
+                        continue
+                    }
+
+                    write.send(ServerMessage::RemotesCleared.try_into()?).await?;
                 }
                 Some((session, request, result)) = run_rx.recv() => {
                     write.send(ServerMessage::RunResult { session, request, result }.try_into()?).await?;
@@ -381,6 +420,38 @@ impl Server {
                                 write.send(ServerMessage::SessionLog { id, entries }.try_into()?).await?;
                             }
                             info!(%peer, lines, "replayed console history");
+                        }
+                        ReadNext::ClientMessage(ClientMessage::RequestRemotes) => {
+                            let batches = self.ctx.sessions.remote_history();
+                            let calls: usize = batches.iter().map(|(_, calls)| calls.len()).sum();
+                            for (id, calls) in batches {
+                                write.send(ServerMessage::SessionRemotes { id, calls }.try_into()?).await?;
+                            }
+                            info!(%peer, calls, "replayed remote history");
+                        }
+                        ReadNext::ClientMessage(ClientMessage::ClearRemotes) => {
+                            let dropped = self.ctx.sessions.clear_remotes();
+                            info!(%peer, dropped, "control cleared the remote history");
+                            // Broadcast, not answered: every control connection
+                            // is showing the same history.
+                            self.ctx.sessions.broadcast_remotes_cleared();
+                        }
+                        ReadNext::ClientMessage(ClientMessage::SetSpy(config)) => {
+                            self.ctx.sessions.set_spy(config);
+
+                            let ids: Vec<SessionId> = {
+                                let guard = self.ctx.sessions.read().await;
+                                guard.list().iter().map(|s| s.id).collect()
+                            };
+                            for id in &ids {
+                                let mut guard = self.ctx.sessions.write().await;
+                                if let Some(session) = guard.find_mut(*id)
+                                    && let Err(e) = session.send(ServerMessage::Spy(config)).await
+                                {
+                                    warn!(id = id.0, "could not push the spy config: {e}");
+                                }
+                            }
+                            info!(%peer, enabled = config.enabled, sessions = ids.len(), "control set the spy config");
                         }
                         ReadNext::ClientMessage(ClientMessage::SetSecurity { id, level }) => {
                             let found = self

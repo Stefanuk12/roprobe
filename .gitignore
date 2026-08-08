@@ -6,6 +6,7 @@ client/dist
 client/roblox.d.luau
 client/.meta/sourcemap.json
 client/.meta/types
+client/.meta/generated
 
 .direnv
 

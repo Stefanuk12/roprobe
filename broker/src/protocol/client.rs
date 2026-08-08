@@ -3,7 +3,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{server::SessionId, upstream::Upstream};
 
-use super::{DomPatch, EnumFamily, LogEntry, OpResult};
+use super::{DomPatch, EnumFamily, LogEntry, OpResult, RemoteCall, SpyConfig};
 
 /// Contains all the possible inbound events from a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +24,9 @@ pub enum ClientMessage {
     RequestActive,
     /// A batch of the client's console output, relayed on to the control connections.
     Log(Vec<LogEntry>),
+    /// A batch of remote calls the client's spy captured, relayed on to the
+    /// control connections.
+    RemoteCalls(Vec<RemoteCall>),
 
     // Control messages //
 
@@ -43,6 +46,15 @@ pub enum ClientMessage {
         request: u32,
         source: String,
     },
+    /// Control-only: ask for the buffered remote-call history, answered with one
+    /// [`super::ServerMessage::SessionRemotes`] per run of calls.
+    RequestRemotes,
+    /// Control-only: drop the buffered remote-call history, echoed to every
+    /// control connection as a [`super::ServerMessage::RemotesCleared`].
+    ClearRemotes,
+    /// Control-only: change what the sessions capture, pushed on to each of them
+    /// as a [`super::ServerMessage::Spy`].
+    SetSpy(SpyConfig),
 }
 
 impl ClientMessage {
@@ -65,11 +77,15 @@ impl ClientMessage {
             ClientMessage::OperationResult { .. } => "operation-result",
             ClientMessage::RequestActive => "request-active",
             ClientMessage::Log(..) => "log",
+            ClientMessage::RemoteCalls(..) => "remote-calls",
             ClientMessage::SwapActive(..) => "swap-active",
             ClientMessage::ListSessions => "list-sessions",
             ClientMessage::SetSecurity { .. } => "set-security",
             ClientMessage::RequestLogs => "request-logs",
             ClientMessage::RunCode { .. } => "run-code",
+            ClientMessage::RequestRemotes => "request-remotes",
+            ClientMessage::ClearRemotes => "clear-remotes",
+            ClientMessage::SetSpy(..) => "set-spy",
         }
     }
 }
@@ -163,19 +179,91 @@ mod tests {
         );
     }
 
-    /// Pins the control-only tags after [`ClientMessage::Log`], which the extension mirrors.
+    /// Pins the control-only tags after [`ClientMessage::RemoteCalls`], which the extension mirrors.
     #[test]
     fn control_only_tags_are_pinned() {
-        assert_eq!(ClientMessage::ListSessions.to_bytes().unwrap(), [0x08]);
-        assert_eq!(ClientMessage::RequestLogs.to_bytes().unwrap(), [0x0a]);
+        assert_eq!(ClientMessage::ListSessions.to_bytes().unwrap(), [0x09]);
+        assert_eq!(ClientMessage::RequestLogs.to_bytes().unwrap(), [0x0b]);
+        assert_eq!(ClientMessage::RequestRemotes.to_bytes().unwrap(), [0x0d]);
+        assert_eq!(ClientMessage::ClearRemotes.to_bytes().unwrap(), [0x0e]);
         assert!(matches!(
-            ClientMessage::from_bytes(vec![0x0a]).unwrap(),
+            ClientMessage::from_bytes(vec![0x0b]).unwrap(),
             ClientMessage::RequestLogs
+        ));
+        assert!(matches!(
+            ClientMessage::from_bytes(vec![0x0d]).unwrap(),
+            ClientMessage::RequestRemotes
+        ));
+    }
+
+    /// Pins [`ClientMessage::RemoteCalls`] at tag 7, the last variant the Luau
+    /// client mirrors, so the control-only tags after it shift with it.
+    #[test]
+    fn remote_calls_round_trips_and_is_pinned() {
+        use crate::protocol::{CallSource, InstanceRef, LuaValue, RemoteCall, RemoteDirection};
+
+        let call = RemoteCall {
+            id: 1,
+            direction: RemoteDirection::Outgoing,
+            remote: InstanceRef {
+                id: "i".into(),
+                class: "C".into(),
+                name: "N".into(),
+                path: "P".into(),
+            },
+            method: "M".into(),
+            arguments: vec![LuaValue::Bool(true)],
+            returns: None,
+            source: CallSource::default(),
+            timestamp: 0.0,
+        };
+        let msg = ClientMessage::RemoteCalls(vec![call.clone()]);
+
+        #[rustfmt::skip]
+        let expected = [
+            // The one call: a plain struct, fields forward.
+            vec![1, 0, 0, 0],                   // id
+            vec![0],                            // direction (Outgoing)
+            vec![b'i', 1, b'C', 1, b'N', 1, b'P', 1], // remote
+            vec![b'M', 1],                      // method
+            vec![1, 1, 1],                      // arguments: [Bool(true)] + VLQ count
+            vec![0],                            // returns: None
+            vec![0, 0, 0, 0, 0, 0],             // source: all-default
+            0.0f64.to_le_bytes().to_vec(),      // timestamp
+            vec![1],                            // calls VLQ count
+            vec![7],                            // ClientMessage tag (RemoteCalls)
+        ]
+        .concat();
+        assert_eq!(msg.to_bytes().unwrap(), expected);
+
+        let ClientMessage::RemoteCalls(calls) = ClientMessage::from_bytes(expected).unwrap() else {
+            panic!("decoded a different variant");
+        };
+        assert_eq!(calls, vec![call]);
+    }
+
+    /// Pins [`ClientMessage::SetSpy`] at tag 15, carrying the config whole.
+    #[test]
+    fn set_spy_round_trips_and_is_pinned() {
+        use crate::protocol::SpyConfig;
+
+        let config = SpyConfig {
+            enabled: true,
+            ..SpyConfig::default()
+        };
+        let bytes = ClientMessage::SetSpy(config).to_bytes().unwrap();
+        assert_eq!(
+            bytes,
+            [squash::serde_serialize(&config).unwrap(), vec![15]].concat(),
+        );
+        assert!(matches!(
+            ClientMessage::from_bytes(bytes).unwrap(),
+            ClientMessage::SetSpy(back) if back == config
         ));
     }
 
     /// Pins [`ClientMessage::RunCode`]: a struct variant, so its fields land
-    /// reversed (`source`, `request`, `session`) with tag 11 last.
+    /// reversed (`source`, `request`, `session`) with tag 12 last.
     #[test]
     fn run_code_round_trips_and_is_pinned() {
         let msg = ClientMessage::RunCode {
@@ -188,7 +276,7 @@ mod tests {
             b's', 1,            // source
             1, 0, 0, 0,         // request (u32 LE)
             7, 0, 0, 0,         // session (SessionId is a newtype over u32)
-            11,                 // ClientMessage tag
+            12,                 // ClientMessage tag
         ];
         assert_eq!(msg.to_bytes().unwrap(), expected);
 
