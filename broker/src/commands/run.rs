@@ -76,11 +76,18 @@ pub async fn run(args: RunArgs, handshake_format: Option<HandshakeFormat>) -> Co
 
     // Start the server
     info!("listening on ws://127.0.0.1:{port}");
+    let mcp_ctx = ctx.clone();
+    let mcp = tokio::spawn(async move {
+        if let Err(e) = crate::mcp::start(mcp_ctx).await {
+            tracing::error!("mcp died: {e}");
+        }
+    });
     let server = Server::new(ctx, args.security_level.ordinal());
     server.run(listener).await;
 
     // Shutdown the server once closed
     verde.abort();
+    mcp.abort();
     // luau_lsp.abort();
     lockfile.remove(); // Stop advertising a broker that is going away
     info!("shut down");

@@ -159,6 +159,34 @@ export type SpyConfig = {
     maxBytes: number,
 }
 
+--- A script's compiled bytecode, answering `GetBytecode`.
+export type BytecodeData = { request: number, scriptPath: string, bytes: string }
+--- A closure's internals, answering `InspectClosure` (and `ScanConstants`).
+export type ClosureInfo = {
+    request: number,
+    name: string,
+    constants: { LuaValue },
+    upvalues: { LuaValue },
+    protos: { string },
+    source: string,
+    nparams: number,
+}
+--- A call a hooked remote saw.
+export type HookedCall = {
+    remote: InstanceRef,
+    args: { LuaValue },
+    returns: { LuaValue }?,
+    caller: CallSource,
+    timestamp: number,
+}
+--- A call a traced function saw.
+export type TraceEvent = {
+    target: string,
+    args: { LuaValue },
+    returns: { LuaValue },
+    timestamp: number,
+}
+
 export type EnumEntry = { name: string, value: number }
 export type EnumFamily = { name: string, items: { EnumEntry } }
 
@@ -173,6 +201,10 @@ export type ClientMessage =
     | enumVariant.EnumVariant<"RequestActive">
     | enumVariant.EnumVariant<"Log", { LogEntry }>
     | enumVariant.EnumVariant<"RemoteCalls", { RemoteCall }>
+    | enumVariant.EnumVariant<"BytecodeData", BytecodeData>
+    | enumVariant.EnumVariant<"ClosureInfo", ClosureInfo>
+    | enumVariant.EnumVariant<"HookedCall", HookedCall>
+    | enumVariant.EnumVariant<"TraceEvent", TraceEvent>
 export type SearchQuery = { from: DomId, query: string }
 export type ServerMessage =
     | enumVariant.EnumVariant<"Hello">
@@ -184,5 +216,11 @@ export type ServerMessage =
     | enumVariant.EnumVariant<"RequestNodes", { DomId }>
     | enumVariant.EnumVariant<"Operation", OperationRequest>
     | enumVariant.EnumVariant<"Spy", SpyConfig>
+    | enumVariant.EnumVariant<"GetBytecode", { request: number, scriptPath: string }>
+    | enumVariant.EnumVariant<"InspectClosure", { request: number, path: string }>
+    | enumVariant.EnumVariant<"HookRemote", { remotePath: string, mode: number }>
+    | enumVariant.EnumVariant<"UnhookRemote", { remotePath: string }>
+    | enumVariant.EnumVariant<"Trace", { targetPath: string, enabled: boolean }>
+    | enumVariant.EnumVariant<"ScanConstants", { request: number, pattern: string }>
 
 return true

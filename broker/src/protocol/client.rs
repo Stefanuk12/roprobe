@@ -3,7 +3,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{server::SessionId, upstream::Upstream};
 
-use super::{DomPatch, EnumFamily, LogEntry, OpResult, RemoteCall, SpyConfig};
+use super::{
+    CallSource, DomPatch, EnumFamily, InstanceRef, LogEntry, LuaValue, OpResult, RemoteCall,
+    SpyConfig,
+};
 
 /// Contains all the possible inbound events from a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +58,40 @@ pub enum ClientMessage {
     /// Control-only: change what the sessions capture, pushed on to each of them
     /// as a [`super::ServerMessage::Spy`].
     SetSpy(SpyConfig),
+
+    // Bytecode / hook messages //
+
+    /// A script's compiled bytecode, answering a [`super::ServerMessage::GetBytecode`].
+    BytecodeData {
+        request: u32,
+        script_path: String,
+        bytes: Vec<u8>,
+    },
+    /// A closure's internals, answering a [`super::ServerMessage::InspectClosure`].
+    ClosureInfo {
+        request: u32,
+        name: String,
+        constants: Vec<LuaValue>,
+        upvalues: Vec<LuaValue>,
+        protos: Vec<String>,
+        source: String,
+        nparams: u8,
+    },
+    /// A call a hooked remote saw, relayed on to the control connections.
+    HookedCall {
+        remote: InstanceRef,
+        args: Vec<LuaValue>,
+        returns: Option<Vec<LuaValue>>,
+        caller: CallSource,
+        timestamp: f64,
+    },
+    /// A call a traced function saw, relayed on to the control connections.
+    TraceEvent {
+        target: String,
+        args: Vec<LuaValue>,
+        returns: Vec<LuaValue>,
+        timestamp: f64,
+    },
 }
 
 impl ClientMessage {
@@ -86,6 +123,10 @@ impl ClientMessage {
             ClientMessage::RequestRemotes => "request-remotes",
             ClientMessage::ClearRemotes => "clear-remotes",
             ClientMessage::SetSpy(..) => "set-spy",
+            ClientMessage::BytecodeData { .. } => "bytecode-data",
+            ClientMessage::ClosureInfo { .. } => "closure-info",
+            ClientMessage::HookedCall { .. } => "hooked-call",
+            ClientMessage::TraceEvent { .. } => "trace-event",
         }
     }
 }

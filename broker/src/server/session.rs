@@ -12,7 +12,9 @@ use tracing::{debug, info, warn};
 
 use crate::{
     Context, Result,
-    protocol::{ClientMessage, DomId, OpResult, ServerMessage},
+    protocol::{
+        ClientMessage, DomId, HookEvent, OpResult, Operation, ServerMessage, TraceCall, text_encode,
+    },
     server::{DomRequest, Mirror, OpRequest, WsWrite},
 };
 
@@ -88,12 +90,43 @@ impl Session {
             op = request.operation.kind(),
             "relaying operation to the client",
         );
+        // own frames, request = op id; fire-and-forget ones ack on send
+        let (message, ack) = match request.operation {
+            Operation::GetBytecode { script_path } => (
+                ServerMessage::GetBytecode {
+                    request: id,
+                    script_path,
+                },
+                false,
+            ),
+            Operation::InspectClosure { path } => {
+                (ServerMessage::InspectClosure { request: id, path }, false)
+            }
+            Operation::HookRemote { remote_path, mode } => {
+                (ServerMessage::HookRemote { remote_path, mode }, true)
+            }
+            Operation::UnhookRemote { remote_path } => {
+                (ServerMessage::UnhookRemote { remote_path }, true)
+            }
+            Operation::Trace {
+                target_path,
+                enabled,
+            } => (
+                ServerMessage::Trace {
+                    target_path,
+                    enabled,
+                },
+                true,
+            ),
+            op => (ServerMessage::Operation { id, op }, false),
+        };
+        if ack {
+            self.send(message).await?;
+            let _ = request.reply.send(OpResult::Ok);
+            return Ok(());
+        }
         self.pending.insert(id, request.reply);
-        self.send(ServerMessage::Operation {
-            id,
-            op: request.operation,
-        })
-        .await
+        self.send(message).await
     }
 
     /// Send a message.
@@ -145,6 +178,18 @@ impl Session {
         self.send(ServerMessage::RequestNodes(ids)).await
     }
 
+    /// Complete the pending request `id` with `result`.
+    fn answer(&mut self, id: u32, result: OpResult) {
+        match self.pending.remove(&id) {
+            Some(reply) => {
+                if reply.send(result).is_err() {
+                    warn!(peer = %self.peer, id, "nobody was waiting on that result");
+                }
+            }
+            None => warn!(peer = %self.peer, id, "result for an unknown request, dropping"),
+        }
+    }
+
     /// Processes a single decoded client message, returning any [`PostHandle`] the caller must run once it has released the sessions lock.
     pub async fn handle(&mut self, message: ClientMessage) -> Result<PostHandle> {
         debug!(peer = %self.peer, kind = message.kind(), "client message");
@@ -190,6 +235,71 @@ impl Session {
             ClientMessage::RemoteCalls(calls) => {
                 debug!(peer = %self.peer, count = calls.len(), "client remote batch");
                 self.ctx.sessions.broadcast_remotes(self.id, calls);
+            }
+            ClientMessage::BytecodeData {
+                request,
+                script_path,
+                bytes,
+            } => {
+                debug!(peer = %self.peer, request, size = bytes.len(), "client sent bytecode");
+                let out = serde_json::json!({
+                    "script_path": script_path,
+                    "size": bytes.len(),
+                    "base64": text_encode(&bytes),
+                });
+                self.answer(request, OpResult::Output(out.to_string()));
+            }
+            ClientMessage::ClosureInfo {
+                request,
+                name,
+                constants,
+                upvalues,
+                protos,
+                source,
+                nparams,
+            } => {
+                debug!(peer = %self.peer, request, name, "client sent closure info");
+                let out = serde_json::json!({
+                    "name": name,
+                    "constants": constants,
+                    "upvalues": upvalues,
+                    "protos": protos,
+                    "source": source,
+                    "nparams": nparams,
+                });
+                self.answer(request, OpResult::Output(out.to_string()));
+            }
+            ClientMessage::HookedCall {
+                remote,
+                args,
+                returns,
+                caller,
+                timestamp,
+            } => {
+                debug!(peer = %self.peer, remote = remote.path, "client hooked call");
+                let event = HookEvent {
+                    remote,
+                    args,
+                    returns,
+                    caller,
+                    timestamp,
+                };
+                self.ctx.sessions.broadcast_hook(self.id, event);
+            }
+            ClientMessage::TraceEvent {
+                target,
+                args,
+                returns,
+                timestamp,
+            } => {
+                debug!(peer = %self.peer, target, "client trace event");
+                let call = TraceCall {
+                    target,
+                    args,
+                    returns,
+                    timestamp,
+                };
+                self.ctx.sessions.broadcast_trace(self.id, call);
             }
             // `set_current` takes the sessions lock our caller already holds, so it is deferred rather than awaited here.
             ClientMessage::RequestActive => {

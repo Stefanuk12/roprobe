@@ -412,3 +412,22 @@ mod tests {
         assert_eq!(back, config);
     }
 }
+
+/// A call a hooked remote saw, as the client reported it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HookEvent {
+    pub remote: InstanceRef,
+    pub args: Vec<LuaValue>,
+    pub returns: Option<Vec<LuaValue>>,
+    pub caller: CallSource,
+    pub timestamp: f64,
+}
+
+/// A call a traced function saw, as the client reported it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceCall {
+    pub target: String,
+    pub args: Vec<LuaValue>,
+    pub returns: Vec<LuaValue>,
+    pub timestamp: f64,
+}

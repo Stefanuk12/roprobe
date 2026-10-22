@@ -1,3 +1,4 @@
+// TODO: mcp-connect, WS bridge plus stdio, someday
 mod run;
 mod security;
 mod sessions;

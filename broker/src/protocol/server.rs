@@ -55,6 +55,21 @@ pub enum ServerMessage {
     /// CONTROL: The buffered remote-call history was dropped, so every control
     /// connection empties its view.
     RemotesCleared,
+
+    // Bytecode / hook messages //
+
+    /// Ask the client for a script's compiled bytecode.
+    GetBytecode { request: u32, script_path: String },
+    /// Ask the client to describe the closure at `path`.
+    InspectClosure { request: u32, path: String },
+    /// Hook a remote, `mode` picking how it is hooked.
+    HookRemote { remote_path: String, mode: u8 },
+    /// Drop a remote's hook.
+    UnhookRemote { remote_path: String },
+    /// Start or stop tracing the function at `target_path`.
+    Trace { target_path: String, enabled: bool },
+    /// Scan the client's closure constants for `pattern`.
+    ScanConstants { request: u32, pattern: String },
 }
 
 /// One connected client session as reported to the `sessions` command.

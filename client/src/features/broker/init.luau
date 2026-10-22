@@ -1,13 +1,17 @@
 -- Dependencies
+local Bytecode = require("@features/bytecode")
 local ConsoleRelay = require("@features/consoleRelay")
 local DomSync = require("@features/broker/DomSync")
 local DomWatch = require("@features/broker/DomWatch")
+local Hooks = require("@features/hooks")
 local Logger = require("@engine/Logger")
 local Messages = require("@lib/Messages")
 local Operations = require("@features/broker/operations")
 local RemoteSpy = require("@features/remoteSpy")
+local Scan = require("@features/scan")
 local Trove = require("@pkgs/trove")
 local WebSocketClient = require("@engine/WebSocketClient")
+local uniqueId = require("@engine/uniqueId")
 
 -- Services
 local HttpService = cloneref(game:GetService("HttpService"))
@@ -53,8 +57,11 @@ export type BrokerData = {
     _connectionTrove: Trove.Trove,
     _config: Config,
     _sync: DomSync.DomSync,
+    --- Names an instance for the broker, falling back to its `UniqueId`.
+    _resolveId: (Instance) -> string,
     _watch: DomWatch.DomWatch?,
     _spy: RemoteSpy.RemoteSpy?,
+    _hooks: Hooks.Hooks?,
     _ws: WebSocketClient.WebSocketClient?,
     _reconnectThread: thread?,
     _upstreams: { [Upstream]: boolean },
@@ -119,13 +126,18 @@ function Broker.new(config: Config?): Broker
     local resolved: Config = config or {}
 
     local trove = Trove.new()
+    local sync = DomSync.new()
     local self: BrokerData = {
         _trove = trove,
         _connectionTrove = trove:Extend(),
         _config = resolved,
-        _sync = DomSync.new(),
+        _sync = sync,
+        _resolveId = function(instance: Instance): string
+            return sync:IdOf(instance) or uniqueId(instance) or ""
+        end,
         _watch = nil,
         _spy = nil,
+        _hooks = nil,
         _ws = nil,
         _reconnectThread = nil,
         _upstreams = {
@@ -253,6 +265,20 @@ function Broker._dispatch(self: Broker, message: Messages.ServerMessage)
         self:_onOperation(message.content)
     elseif message.type == "Spy" then
         self:_onSpy(message.content)
+    elseif message.type == "GetBytecode" then
+        self:_send(Bytecode.Fetch(message.content.request, message.content.scriptPath))
+    elseif message.type == "InspectClosure" then
+        local content = message.content
+        self:_send(Bytecode.Inspect(content.request, content.path, self._resolveId))
+    elseif message.type == "ScanConstants" then
+        local content = message.content
+        self:_send(Scan.Constants(content.request, content.pattern, self._resolveId))
+    elseif message.type == "HookRemote" and self._hooks then
+        self._hooks:Hook(message.content.remotePath, message.content.mode)
+    elseif message.type == "UnhookRemote" and self._hooks then
+        self._hooks:Unhook(message.content.remotePath)
+    elseif message.type == "Trace" and self._hooks then
+        self._hooks:Trace(message.content.targetPath, message.content.enabled)
     else
         Logger:Warn("broker", `unhandled message {message.type}`)
     end
@@ -404,6 +430,11 @@ function Broker._onHello(self: Broker)
         "Disconnect"
     )
 
+    -- Hooks stay off until asked; dying with the link unhooks them.
+    self._hooks = self._connectionTrove:Add(Hooks.new(function(message: Messages.ClientMessage)
+        self:_send(message)
+    end, self._resolveId))
+
     -- Relay console output only while connected.
     local console = self._connectionTrove:Add(ConsoleRelay.new())
     self._connectionTrove:Add(
@@ -479,6 +510,7 @@ function Broker._onDisconnected(self: Broker)
     self._connectionTrove:Clean()
     self._watch = nil
     self._spy = nil
+    self._hooks = nil
 
     if self.isRunning then
         Logger:Info("broker", "disconnected, reconnecting")

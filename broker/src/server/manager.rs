@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, broadcast, watch};
 use tracing::debug;
 
 use crate::{
-    protocol::{LogEntry, RemoteCall, SessionInfo, SpyConfig},
+    protocol::{HookEvent, LogEntry, RemoteCall, SessionInfo, SpyConfig, TraceCall},
     server::{DomChange, Session, SessionDom, SessionId},
 };
 
@@ -18,6 +18,8 @@ const LOG_HISTORY: usize = 1_000;
 
 const REMOTE_BUFFER: usize = 256;
 const REMOTE_HISTORY: usize = 5_000;
+
+const HOOK_BUFFER: usize = 256;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -130,6 +132,8 @@ pub struct Sessions {
     history: Arc<Mutex<VecDeque<(SessionId, LogEntry)>>>,
     on_remotes: Arc<broadcast::Sender<(SessionId, Vec<RemoteCall>)>>,
     on_remotes_cleared: Arc<broadcast::Sender<()>>,
+    on_hooks: Arc<broadcast::Sender<(SessionId, HookEvent)>>,
+    on_traces: Arc<broadcast::Sender<(SessionId, TraceCall)>>,
     remotes: Arc<Mutex<VecDeque<(SessionId, RemoteCall)>>>,
     spy: Arc<Mutex<SpyConfig>>,
 }
@@ -151,6 +155,8 @@ impl Sessions {
             history: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_HISTORY))),
             on_remotes: Arc::new(broadcast::channel(REMOTE_BUFFER).0),
             on_remotes_cleared: Arc::new(broadcast::channel(16).0),
+            on_hooks: Arc::new(broadcast::channel(HOOK_BUFFER).0),
+            on_traces: Arc::new(broadcast::channel(HOOK_BUFFER).0),
             remotes: Arc::new(Mutex::new(VecDeque::with_capacity(REMOTE_HISTORY))),
             spy: Arc::new(Mutex::new(SpyConfig::default())),
         }
@@ -314,6 +320,28 @@ impl Sessions {
 
     pub fn subscribe_remotes_cleared(&self) -> broadcast::Receiver<()> {
         self.on_remotes_cleared.subscribe()
+    }
+
+    /// Fan one hooked remote call out to the control connections.
+    pub fn broadcast_hook(&self, id: SessionId, event: HookEvent) {
+        if self.on_hooks.send((id, event)).is_err() {
+            debug!(id = id.0, "hooked call dropped, no listener");
+        }
+    }
+
+    pub fn subscribe_hooks(&self) -> broadcast::Receiver<(SessionId, HookEvent)> {
+        self.on_hooks.subscribe()
+    }
+
+    /// Fan one traced call out to the control connections.
+    pub fn broadcast_trace(&self, id: SessionId, call: TraceCall) {
+        if self.on_traces.send((id, call)).is_err() {
+            debug!(id = id.0, "trace event dropped, no listener");
+        }
+    }
+
+    pub fn subscribe_traces(&self) -> broadcast::Receiver<(SessionId, TraceCall)> {
+        self.on_traces.subscribe()
     }
 
     /// What sessions are currently told to capture.

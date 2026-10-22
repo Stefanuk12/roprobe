@@ -1,6 +1,7 @@
 -- Dependencies
 local Broker = require("@contracts/Broker")
 local Squash = require("@pkgs/squash")
+local bytecode = require("@lib/Messages/bytecode")
 local dom = require("@lib/Messages/dom")
 local operations = require("@lib/Messages/operations")
 local primitives = require("@lib/Messages/primitives")
@@ -110,6 +111,19 @@ local clientMessage: Squash.SerDes<ClientMessage> = squashEnum({
     { type = "RequestActive" :: "RequestActive" } :: any,
     { type = "Log" :: "Log", content = Squash.T(logEntries) },
     { type = "RemoteCalls" :: "RemoteCalls", content = Squash.T(remoteCalls) },
+    -- control tags, nobody home
+    { type = "SwapActive" :: "SwapActive" } :: any,
+    { type = "ListSessions" :: "ListSessions" } :: any,
+    { type = "SetSecurity" :: "SetSecurity" } :: any,
+    { type = "RequestLogs" :: "RequestLogs" } :: any,
+    { type = "RunCode" :: "RunCode" } :: any,
+    { type = "RequestRemotes" :: "RequestRemotes" } :: any,
+    { type = "ClearRemotes" :: "ClearRemotes" } :: any,
+    { type = "SetSpy" :: "SetSpy" } :: any,
+    { type = "BytecodeData" :: "BytecodeData", content = Squash.T(bytecode.bytecodeData) },
+    { type = "ClosureInfo" :: "ClosureInfo", content = Squash.T(bytecode.closureInfo) },
+    { type = "HookedCall" :: "HookedCall", content = Squash.T(bytecode.hookedCall) },
+    { type = "TraceEvent" :: "TraceEvent", content = Squash.T(bytecode.traceEvent) },
 })
 
 --- Mirrors `Search`'s `{ from, query }` payload.
@@ -137,6 +151,20 @@ local serverMessage: Squash.SerDes<ServerMessage> = squashEnum({
     { type = "RequestNodes" :: "RequestNodes", content = Squash.T(strArray) },
     { type = "Operation" :: "Operation", content = Squash.T(operationRequest) },
     { type = "Spy" :: "Spy", content = Squash.T(spyConfig) },
+    -- control tags, nobody home
+    { type = "Sessions" :: "Sessions" } :: any,
+    { type = "NewSession" :: "NewSession" } :: any,
+    { type = "RemoveSession" :: "RemoveSession" } :: any,
+    { type = "SessionLog" :: "SessionLog" } :: any,
+    { type = "RunResult" :: "RunResult" } :: any,
+    { type = "SessionRemotes" :: "SessionRemotes" } :: any,
+    { type = "RemotesCleared" :: "RemotesCleared" } :: any,
+    { type = "GetBytecode" :: "GetBytecode", content = Squash.T(bytecode.getBytecode) },
+    { type = "InspectClosure" :: "InspectClosure", content = Squash.T(bytecode.inspectClosure) },
+    { type = "HookRemote" :: "HookRemote", content = Squash.T(bytecode.hookRemote) },
+    { type = "UnhookRemote" :: "UnhookRemote", content = Squash.T(bytecode.unhookRemote) },
+    { type = "Trace" :: "Trace", content = Squash.T(bytecode.trace) },
+    { type = "ScanConstants" :: "ScanConstants", content = Squash.T(bytecode.scanConstants) },
 })
 
 return {

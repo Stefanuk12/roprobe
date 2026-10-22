@@ -56,6 +56,28 @@ pub enum Operation {
     RunCode {
         source: String,
     },
+    /// Relayed as a `ServerMessage::GetBytecode`; the client answers with `BytecodeData`.
+    GetBytecode {
+        script_path: String,
+    },
+    /// Relayed as a `ServerMessage::InspectClosure`; the client answers with `ClosureInfo`.
+    InspectClosure {
+        path: String,
+    },
+    /// Relayed as a `ServerMessage::HookRemote`; answered `Ok` on send, calls stream as hook events.
+    HookRemote {
+        remote_path: String,
+        mode: u8,
+    },
+    /// Relayed as a `ServerMessage::UnhookRemote`; answered `Ok` on send.
+    UnhookRemote {
+        remote_path: String,
+    },
+    /// Relayed as a `ServerMessage::Trace`; answered `Ok` on send, calls stream as trace events.
+    Trace {
+        target_path: String,
+        enabled: bool,
+    },
 }
 
 impl Operation {
@@ -74,6 +96,11 @@ impl Operation {
             Operation::RenameAttribute { .. } => "rename-attribute",
             Operation::GetProperties { .. } => "get-properties",
             Operation::RunCode { .. } => "run-code",
+            Operation::GetBytecode { .. } => "get-bytecode",
+            Operation::InspectClosure { .. } => "inspect-closure",
+            Operation::HookRemote { .. } => "hook-remote",
+            Operation::UnhookRemote { .. } => "unhook-remote",
+            Operation::Trace { .. } => "trace",
         }
     }
 }
